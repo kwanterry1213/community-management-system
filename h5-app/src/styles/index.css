@@ -1,0 +1,255 @@
+/* 全域樣式 - 會籍管理系統 H5 */
+
+:root {
+    /* 主色調 - 專業深藍 */
+    --color-primary: #1a365d;
+    --color-primary-light: #2c5282;
+
+    /* 強調色 - 金色 */
+    --color-gold: #d69e2e;
+    --color-gold-light: #ecc94b;
+
+    /* 狀態色 */
+    --color-success: #38a169;
+    --color-warning: #dd6b20;
+    --color-danger: #e53e3e;
+    --color-info: #3182ce;
+
+    /* 灰階 */
+    --color-gray-50: #f7fafc;
+    --color-gray-100: #edf2f7;
+    --color-gray-200: #e2e8f0;
+    --color-gray-300: #cbd5e0;
+    --color-gray-400: #a0aec0;
+    --color-gray-500: #718096;
+    --color-gray-600: #4a5568;
+    --color-gray-700: #2d3748;
+    --color-gray-800: #1a202c;
+
+    /* 安全區域 */
+    --safe-area-top: env(safe-area-inset-top);
+    --safe-area-bottom: env(safe-area-inset-bottom);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html,
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans SC', sans-serif;
+    background: var(--color-gray-100);
+    color: var(--color-gray-700);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+}
+
+#app {
+    min-height: 100vh;
+    padding-bottom: 60px;
+    /* 底部導航空間 */
+}
+
+/* 頁面容器 */
+.page {
+    padding: 16px;
+    padding-top: calc(16px + var(--safe-area-top));
+}
+
+/* 卡片樣式 */
+.card {
+    background: white;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.card-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-gray-800);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* KPI 卡片 */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.kpi-card {
+    background: white;
+    border-radius: 12px;
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+}
+
+.kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--color-primary);
+}
+
+.kpi-card.blue::before {
+    background: var(--color-info);
+}
+
+.kpi-card.green::before {
+    background: var(--color-success);
+}
+
+.kpi-card.orange::before {
+    background: var(--color-warning);
+}
+
+.kpi-card.gold::before {
+    background: var(--color-gold);
+}
+
+.kpi-label {
+    font-size: 12px;
+    color: var(--color-gray-500);
+    margin-bottom: 4px;
+}
+
+.kpi-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--color-gray-800);
+}
+
+.kpi-change {
+    font-size: 12px;
+    color: var(--color-success);
+    margin-top: 4px;
+}
+
+/* 會籍徽章 */
+.membership-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.membership-badge.normal {
+    background: rgba(113, 128, 150, 0.1);
+    color: var(--color-gray-600);
+}
+
+.membership-badge.silver {
+    background: rgba(113, 128, 150, 0.15);
+    color: #5a6a7e;
+}
+
+.membership-badge.gold {
+    background: rgba(214, 158, 46, 0.15);
+    color: #b7791f;
+}
+
+.membership-badge.enterprise {
+    background: rgba(49, 130, 206, 0.1);
+    color: var(--color-info);
+}
+
+/* 狀態標籤 */
+.status-tag {
+    display: inline-flex;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.status-tag.active {
+    background: rgba(56, 161, 105, 0.1);
+    color: var(--color-success);
+}
+
+.status-tag.pending {
+    background: rgba(49, 130, 206, 0.1);
+    color: var(--color-info);
+}
+
+.status-tag.expired {
+    background: rgba(229, 62, 62, 0.1);
+    color: var(--color-danger);
+}
+
+/* 會員列表項 */
+.member-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--color-gray-100);
+}
+
+.member-item:last-child {
+    border-bottom: none;
+}
+
+.member-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    margin-right: 12px;
+    object-fit: cover;
+}
+
+.member-info {
+    flex: 1;
+}
+
+.member-name {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--color-gray-800);
+    margin-bottom: 2px;
+}
+
+.member-meta {
+    font-size: 12px;
+    color: var(--color-gray-500);
+}
+
+/* 頁面標題 */
+.page-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--color-gray-800);
+    margin-bottom: 16px;
+}
+
+/* Vant 覆寫 */
+:root {
+    --van-primary-color: #1a365d;
+    --van-success-color: #38a169;
+    --van-danger-color: #e53e3e;
+    --van-warning-color: #dd6b20;
+}
+
+.van-tabbar {
+    --van-tabbar-item-active-color: var(--color-gold);
+}
+
+.van-nav-bar {
+    --van-nav-bar-background: var(--color-primary);
+    --van-nav-bar-title-text-color: white;
+    --van-nav-bar-icon-color: white;
+}

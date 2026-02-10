@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>會籍管理系統 - 會員詳情</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
+        rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="logo"><i class="fas fa-users-cog"></i><span>會籍管理系統</span></div>
+            <nav class="nav-menu">
+                <a href="index.html" class="nav-item"><i class="fas fa-tachometer-alt"></i><span>儀表板</span></a>
+                <a href="members.html" class="nav-item active"><i class="fas fa-users"></i><span>會員管理</span></a>
+                <a href="payments.html" class="nav-item"><i class="fas fa-credit-card"></i><span>會費記錄</span></a>
+                <a href="reports.html" class="nav-item"><i class="fas fa-chart-bar"></i><span>報表統計</span></a>
+                <a href="#" class="nav-item"><i class="fas fa-cog"></i><span>系統設定</span></a>
+            </nav>
+        </aside>
+        <main class="main-content">
+            <header class="top-nav">
+                <div class="search-box"><i class="fas fa-search"></i><input type="text" placeholder="搜尋..."></div>
+                <div class="nav-actions">
+                    <button class="icon-btn notification-btn"><i class="fas fa-bell"></i><span
+                            class="badge">3</span></button>
+                    <div class="user-profile"><img
+                            src="https://ui-avatars.com/api/?name=Admin&background=1a365d&color=fff"
+                            alt=""><span>管理員</span></div>
+                </div>
+            </header>
+            <div class="content">
+                <nav class="breadcrumb"><a href="members.html">會員管理</a> <i class="fas fa-chevron-right"></i>
+                    <span>會員詳情</span></nav>
+                <div class="detail-header">
+                    <div class="member-avatar-lg"><img
+                            src="https://ui-avatars.com/api/?name=陳大明&background=3182ce&color=fff&size=120" alt="">
+                    </div>
+                    <div class="member-header-info">
+                        <div class="member-name-row">
+                            <h1>陳大明</h1><span class="status-badge active">有效會員</span><span
+                                class="membership-badge gold"><i class="fas fa-crown"></i> 金級會員</span>
+                        </div>
+                        <div class="member-id-row"><span>會員編號：M-2024-0158</span><span>加入日期：2022-06-15</span></div>
+                    </div>
+                    <div class="header-actions"><button class="btn btn-secondary"><i class="fas fa-print"></i>
+                            列印</button><button class="btn btn-primary"><i class="fas fa-edit"></i> 編輯資料</button></div>
+                </div>
+                <div class="detail-grid">
+                    <div class="detail-main">
+                        <div class="detail-card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-user"></i> 基本資料</h3>
+                            </div>
+                            <div class="info-grid">
+                                <div class="info-item"><span class="info-label">姓名</span><span
+                                        class="info-value">陳大明</span></div>
+                                <div class="info-item"><span class="info-label">聯絡電話</span><span
+                                        class="info-value">0912-345-678</span></div>
+                                <div class="info-item"><span class="info-label">電子郵件</span><span
+                                        class="info-value">daming.chen@email.com</span></div>
+                                <div class="info-item"><span class="info-label">公司名稱</span><span
+                                        class="info-value">大明科技股份有限公司</span></div>
+                                <div class="info-item"><span class="info-label">職稱</span><span
+                                        class="info-value">總經理</span></div>
+                                <div class="info-item"><span class="info-label">地址</span><span
+                                        class="info-value">台北市信義區信義路五段7號</span></div>
+                            </div>
+                        </div>
+                        <div class="detail-card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-id-card"></i> 會籍資訊</h3>
+                            </div>
+                            <div class="info-grid">
+                                <div class="info-item"><span class="info-label">會籍類型</span><span
+                                        class="info-value"><span class="membership-badge gold"><i
+                                                class="fas fa-crown"></i> 金級會員</span></span></div>
+                                <div class="info-item"><span class="info-label">開始日期</span><span
+                                        class="info-value">2024-07-01</span></div>
+                                <div class="info-item"><span class="info-label">到期日期</span><span
+                                        class="info-value">2026-06-30</span></div>
+                                <div class="info-item"><span class="info-label">自動續費</span><span
+                                        class="info-value"><span class="status-badge active">已啟用</span></span></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="detail-side">
+                        <div class="detail-card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-receipt"></i> 繳費記錄</h3><a href="#" class="view-all">查看全部</a>
+                            </div>
+                            <div class="mini-list">
+                                <div class="mini-item">
+                                    <div class="mini-info"><span class="mini-date">2024-07-01</span><span
+                                            class="mini-desc">年費 - 金級會員</span></div><span
+                                        class="mini-amount">$12,000</span>
+                                </div>
+                                <div class="mini-item">
+                                    <div class="mini-info"><span class="mini-date">2023-07-01</span><span
+                                            class="mini-desc">年費 - 銀級會員</span></div><span
+                                        class="mini-amount">$6,000</span>
+                                </div>
+                                <div class="mini-item">
+                                    <div class="mini-info"><span class="mini-date">2022-06-15</span><span
+                                            class="mini-desc">入會費</span></div><span class="mini-amount">$1,000</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="detail-card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-calendar-check"></i> 活動參與</h3>
+                            </div>
+                            <div class="mini-list">
+                                <div class="mini-item">
+                                    <div class="mini-info"><span class="mini-date">2026-01-15</span><span
+                                            class="mini-desc">新春聯誼餐會</span></div><span class="badge success">已參加</span>
+                                </div>
+                                <div class="mini-item">
+                                    <div class="mini-info"><span class="mini-date">2025-12-10</span><span
+                                            class="mini-desc">年度商業論壇</span></div><span class="badge success">已參加</span>
+                                </div>
+                                <div class="mini-item">
+                                    <div class="mini-info"><span class="mini-date">2025-09-22</span><span
+                                            class="mini-desc">會員高峰會</span></div><span class="badge success">已參加</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="action-bar"><button class="btn btn-gold"><i class="fas fa-sync"></i> 會籍續費</button><button
+                        class="btn btn-secondary"><i class="fas fa-pause"></i> 暫停會籍</button><button
+                        class="btn btn-danger-outline"><i class="fas fa-trash"></i> 刪除會員</button></div>
+            </div>
+        </main>
+    </div>
+</body>
+
+</html>
