@@ -32,7 +32,7 @@
           title="返回會員端" 
           icon="arrow-left" 
           is-link 
-          @click="$router.push('/m')"
+          @click="$router.push('/m/home')"
         >
           <template #label>
             <span style="color: #3182ce;">退出管理後台</span>

@@ -1,14 +1,22 @@
 import streamlit as st
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
 from typing import List, Optional
 import sqlite3
 from passlib.context import CryptContext
+
 import secrets
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from jose import JWTError, jwt
+from datetime import datetime, timedelta
 
 # --- Database Setup ---
-DATABASE_NAME = "community_app.db"
+DATABASE_NAME = os.path.join(os.path.dirname(os.path.abspath(__file__)), "community_app.db")
 
 def get_db():
     db = sqlite3.connect(DATABASE_NAME)
@@ -211,6 +219,24 @@ def init_db():
     )
     """)
 
+    # 為既有資料庫補上 payments 表（若不存在）
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        community_id INTEGER NOT NULL,
+        description TEXT NOT NULL,
+        amount REAL NOT NULL,
+        method TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        related_type TEXT,
+        related_id INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (community_id) REFERENCES communities(id)
+    )
+    """)
+
     # 為既有資料庫補上 wechat_id 欄位（若不存在）
     cursor.execute("PRAGMA table_info(users)")
     existing_columns = {row[1] for row in cursor.fetchall()}
@@ -301,6 +327,12 @@ class MembershipCreate(BaseModel):
     level: Optional[str] = None
     status: Optional[str] = "active"
     role: Optional[str] = "visitor"
+    expires_at: Optional[str] = None
+
+class MembershipUpdate(BaseModel):
+    level: Optional[str] = None
+    status: Optional[str] = None
+    role: Optional[str] = None
     expires_at: Optional[str] = None
 
 class Membership(BaseModel):
@@ -463,21 +495,73 @@ class Message(BaseModel):
 # --- FastAPI App ---
 app = FastAPI()
 
+# --- CORS ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # --- Authentication Dependencies ---
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token") # Placeholder for token URL
+# --- Authentication Dependencies ---
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+# JWT Configuration
+SECRET_KEY = os.getenv("SECRET_KEY", "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 days for mobile app convenience
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
-    # In a real app, you'd decode the token and fetch the user from the DB
-    # For this example, we'll use session state from Streamlit
-    if "user_id" in st.session_state and st.session_state.user_id:
-        db = get_db()
-        cursor = db.cursor()
-        cursor.execute("SELECT * FROM users WHERE id = ?", (st.session_state.user_id,))
-        user_data = cursor.fetchone()
-        db.close()
-        if user_data:
-            return User(**dict(user_data))
-    raise HTTPException(status_code=401, detail="Not authenticated")
+    # 1. Try Streamlit session first (for monolithic app usage)
+    # Note: accessing st.session_state from a different thread (Uvicorn worker) might not work as expected
+    # but we keep it for the Streamlit runner.
+    try:
+        if "user_id" in st.session_state and st.session_state.user_id:
+             db = get_db()
+             cursor = db.cursor()
+             cursor.execute("SELECT * FROM users WHERE id = ?", (st.session_state.user_id,))
+             user_data = cursor.fetchone()
+             db.close()
+             if user_data:
+                 return User(**dict(user_data))
+    except Exception:
+        pass # Ignore Streamlit session errors in API context
+
+    # 2. Try JWT token (for Vue/API usage)
+    credentials_exception = HTTPException(
+        status_code=401,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+        
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+    user_data = cursor.fetchone()
+    db.close()
+    
+    if user_data is None:
+        raise credentials_exception
+    return User(**dict(user_data))
 
 
 # --- Auth API Endpoints (for Streamlit UI) ---
@@ -524,7 +608,11 @@ def api_login(payload: ApiLoginRequest):
         "is_profile_public": True,
         "show_email_publicly": False,
     }
-    return {"access_token": "demo-token", "token_type": "bearer", "user_info": user_info}
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user_data["username"]}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer", "user_info": user_info}
 
 
 @app.post("/api/auth/wechat_sso")
@@ -586,7 +674,11 @@ def api_wechat_sso(payload: ApiWeChatSSORequest):
         "is_profile_public": True,
         "show_email_publicly": False,
     }
-    return {"access_token": "wechat-demo-token", "token_type": "bearer", "user_info": user_info}
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user_data["username"]}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer", "user_info": user_info}
 
 
 # --- WeChat OAuth Mock (for testing without service account) ---
@@ -654,12 +746,18 @@ def create_community(payload: CommunityCreate, created_by: int):
     cursor.execute("SELECT * FROM communities WHERE id = ?", (cursor.lastrowid,))
     row = cursor.fetchone()
     db.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="社團不存在")
     return Community(**dict(row))
 
 
 # --- Membership API ---
 @app.get("/api/memberships", response_model=List[Membership])
-def list_memberships(user_id: Optional[int] = None, community_id: Optional[int] = None):
+def api_list_memberships(
+    user_id: Optional[int] = None, 
+    community_id: Optional[int] = None,
+    current_user: User = Depends(get_current_user)
+):
     db = get_db()
     cursor = db.cursor()
     query = "SELECT * FROM memberships WHERE 1=1"
@@ -673,12 +771,11 @@ def list_memberships(user_id: Optional[int] = None, community_id: Optional[int] 
     query += " ORDER BY joined_at DESC"
     cursor.execute(query, params)
     rows = cursor.fetchall()
-    db.close()
     return [Membership(**dict(row)) for row in rows]
 
 
 @app.post("/api/memberships", response_model=Membership)
-def create_membership(payload: MembershipCreate):
+def api_create_membership(payload: MembershipCreate, current_user: User = Depends(get_current_user)):
     db = get_db()
     cursor = db.cursor()
     try:
@@ -692,24 +789,59 @@ def create_membership(payload: MembershipCreate):
                 payload.community_id,
                 payload.membership_no,
                 payload.level,
-                payload.status or "active",
-                payload.role or "visitor",
+                payload.status,
+                payload.role,
                 payload.expires_at,
             ),
         )
         db.commit()
-    except sqlite3.IntegrityError as exc:
-        db.rollback()
-        raise HTTPException(status_code=400, detail=f"新增會籍失敗: {exc}") from exc
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="該用戶已是此社群會員")
     cursor.execute("SELECT * FROM memberships WHERE id = ?", (cursor.lastrowid,))
     row = cursor.fetchone()
     db.close()
     return Membership(**dict(row))
 
 
+@app.patch("/api/memberships/{membership_id}", response_model=Membership)
+def api_update_membership(membership_id: int, payload: MembershipUpdate, current_user: User = Depends(get_current_user)):
+    db = get_db()
+    cursor = db.cursor()
+    updates = []
+    params = []
+    
+    if payload.role:
+        updates.append("role = ?")
+        params.append(payload.role)
+    if payload.level:
+        updates.append("level = ?")
+        params.append(payload.level)
+    if payload.status:
+        updates.append("status = ?")
+        params.append(payload.status)
+    if payload.expires_at:
+        updates.append("expires_at = ?")
+        params.append(payload.expires_at)
+        
+    if not updates:
+        raise HTTPException(status_code=400, detail="沒有要更新的欄位")
+        
+    params.append(membership_id)
+    cursor.execute(f"UPDATE memberships SET {', '.join(updates)} WHERE id = ?", params)
+    db.commit()
+    
+    cursor.execute("SELECT * FROM memberships WHERE id = ?", (membership_id,))
+    row = cursor.fetchone()
+    db.close()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="會籍不存在")
+    return Membership(**dict(row))
+
+
 # --- Users API (admin) ---
 @app.get("/api/users", response_model=List[User])
-def list_users():
+def api_list_users(current_user: User = Depends(get_current_user)):
     db = get_db()
     cursor = db.cursor()
     cursor.execute("SELECT * FROM users ORDER BY created_at DESC")
@@ -719,7 +851,7 @@ def list_users():
 
 
 @app.get("/api/users/{user_id}", response_model=User)
-def get_user(user_id: int):
+def api_get_user(user_id: int, current_user: User = Depends(get_current_user)):
     db = get_db()
     cursor = db.cursor()
     cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
@@ -728,6 +860,118 @@ def get_user(user_id: int):
     if not row:
         raise HTTPException(status_code=404, detail="使用者不存在")
     return User(**dict(row))
+
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    bio: Optional[str] = None
+    profile_picture: Optional[str] = None
+
+
+@app.patch("/api/users/{user_id}", response_model=User)
+def api_update_user(user_id: int, payload: UserUpdate, current_user: User = Depends(get_current_user)):
+    db = get_db()
+    cursor = db.cursor()
+    updates = []
+    params = []
+    for field in ["username", "phone", "email", "bio", "profile_picture"]:
+        value = getattr(payload, field, None)
+        if value is not None:
+            updates.append(f"{field} = ?")
+            params.append(value)
+    if not updates:
+        raise HTTPException(status_code=400, detail="沒有要更新的欄位")
+    params.append(user_id)
+    cursor.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
+    db.commit()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    db.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="使用者不存在")
+    return User(**dict(row))
+
+
+# --- Payments API ---
+@app.get("/api/payments")
+def list_payments(user_id: Optional[int] = None, community_id: Optional[int] = None):
+    db = get_db()
+    cursor = db.cursor()
+    query = "SELECT * FROM payments WHERE 1=1"
+    params = []
+    if user_id is not None:
+        query += " AND user_id = ?"
+        params.append(user_id)
+    if community_id is not None:
+        query += " AND community_id = ?"
+        params.append(community_id)
+    query += " ORDER BY created_at DESC"
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    db.close()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/payments")
+def create_payment(payload: dict):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute(
+        "INSERT INTO payments (user_id, community_id, description, amount, method, status, related_type, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            payload.get("user_id"),
+            payload.get("community_id", 1),
+            payload.get("description", ""),
+            payload.get("amount", 0),
+            payload.get("method"),
+            payload.get("status", "pending"),
+            payload.get("related_type"),
+            payload.get("related_id"),
+        ),
+    )
+    db.commit()
+    cursor.execute("SELECT * FROM payments WHERE id = ?", (cursor.lastrowid,))
+    row = cursor.fetchone()
+    db.close()
+    return dict(row)
+
+
+# --- Dashboard Stats API ---
+@app.get("/api/stats/dashboard")
+def get_dashboard_stats(community_id: Optional[int] = None):
+    db = get_db()
+    cursor = db.cursor()
+    cond = "WHERE community_id = ?" if community_id else ""
+    params = [community_id] if community_id else []
+
+    cursor.execute(f"SELECT COUNT(*) as cnt FROM memberships {cond}", params)
+    total_members = cursor.fetchone()["cnt"]
+
+    cursor.execute(f"SELECT COUNT(*) as cnt FROM memberships {cond.replace('WHERE', 'WHERE status = \'active\' AND') if cond else 'WHERE status = \'active\''}", params)
+    active_members = cursor.fetchone()["cnt"]
+
+    cursor.execute(f"SELECT COUNT(*) as cnt FROM memberships {cond.replace('WHERE', 'WHERE status = \'expired\' AND') if cond else 'WHERE status = \'expired\''}", params)
+    expired_members = cursor.fetchone()["cnt"]
+
+    pending_members = total_members - active_members - expired_members
+
+    cursor.execute(f"SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE status = 'paid'" + (" AND community_id = ?" if community_id else ""), params)
+    total_revenue = cursor.fetchone()["total"]
+
+    cursor.execute(f"SELECT COUNT(*) as cnt FROM events {cond}", params)
+    total_events = cursor.fetchone()["cnt"]
+
+    db.close()
+    return {
+        "totalMembers": total_members,
+        "activeMembers": active_members,
+        "pendingMembers": pending_members,
+        "expiredMembers": expired_members,
+        "totalRevenue": total_revenue,
+        "totalEvents": total_events,
+    }
 
 
 # --- Announcements API ---
@@ -1540,6 +1784,29 @@ def run_streamlit_ui():
     # For a true FastAPI backend, you would separate the FastAPI routes and models into
     # different files and run FastAPI separately, with Streamlit acting as the frontend.
 
+
+# --- Frontend Static Files (SPA) ---
+dist_dir = os.path.join(os.path.dirname(__file__), "h5-app", "dist")
+
+if os.path.exists(dist_dir):
+    # Mount assets folder
+    assets_dir = os.path.join(dist_dir, "assets")
+    if os.path.exists(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    # Serve index.html for all other routes (catch-all)
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # Allow API routes to pass through (handled by previous definitions)
+        # But wait, this catch-all matches everything.
+        # Since API routes are defined ABOVE, they take precedence.
+        # So we only catch what fell through.
+        
+        file_path = os.path.join(dist_dir, full_path)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        
+        return FileResponse(os.path.join(dist_dir, "index.html"))
 
 if __name__ == "__main__":
     run_streamlit_ui()

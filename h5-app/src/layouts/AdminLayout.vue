@@ -8,7 +8,7 @@
     
     <!-- 管理後台底部導航 -->
     <van-tabbar v-model="activeTab" route>
-      <van-tabbar-item to="/admin" icon="home-o">首頁</van-tabbar-item>
+      <van-tabbar-item to="/admin/dashboard" icon="home-o">首頁</van-tabbar-item>
       <van-tabbar-item to="/admin/members" icon="friends-o">會員</van-tabbar-item>
       <van-tabbar-item to="/admin/payments" icon="card">繳費</van-tabbar-item>
       <van-tabbar-item to="/admin/profile" icon="user-o">我的</van-tabbar-item>

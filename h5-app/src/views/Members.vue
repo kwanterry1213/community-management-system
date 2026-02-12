@@ -43,14 +43,14 @@
             <div class="member-content">
               <div class="member-header">
                 <span class="member-name">{{ member.name }}</span>
-                <span :class="['membership-badge', member.membershipType]">
-                  {{ memberStore.membershipTypes[member.membershipType].label }}
+                <span :class="['membership-badge', member.level]">
+                  {{ memberStore.membershipTypes[member.level]?.label || member.level }}
                 </span>
               </div>
               <div class="member-meta">
                 <span>{{ member.phone }}</span>
                 <span class="divider">|</span>
-                <span>{{ member.id }}</span>
+                <span>{{ member.membershipNo || member.id }}</span>
               </div>
               <div class="member-footer">
                 <span :class="['status-tag', member.status]">
@@ -77,10 +77,9 @@
         <div class="filter-section">
           <div class="filter-title">會籍類型</div>
           <van-checkbox-group v-model="filterMembership" direction="horizontal">
-            <van-checkbox name="normal" shape="square">普通會員</van-checkbox>
-            <van-checkbox name="silver" shape="square">銀級會員</van-checkbox>
-            <van-checkbox name="gold" shape="square">金級會員</van-checkbox>
-            <van-checkbox name="enterprise" shape="square">企業會員</van-checkbox>
+            <van-checkbox name="committee" shape="square">圈委</van-checkbox>
+            <van-checkbox name="citizen" shape="square">圈民</van-checkbox>
+            <van-checkbox name="friend" shape="square">圈友</van-checkbox>
           </van-checkbox-group>
         </div>
         <div class="filter-footer">
@@ -92,7 +91,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useMemberStore } from '@/stores/member'
 
 const memberStore = useMemberStore()
@@ -110,23 +109,20 @@ const finished = ref(true)
 const filteredMembers = computed(() => {
   let result = memberStore.members
 
-  // 狀態篩選
   if (activeStatus.value !== 'all') {
     result = result.filter(m => m.status === activeStatus.value)
   }
 
-  // 會籍類型篩選
   if (filterMembership.value.length > 0) {
-    result = result.filter(m => filterMembership.value.includes(m.membershipType))
+    result = result.filter(m => filterMembership.value.includes(m.level))
   }
 
-  // 搜尋
   if (searchText.value) {
     const query = searchText.value.toLowerCase()
     result = result.filter(m =>
       m.name.toLowerCase().includes(query) ||
-      m.phone.includes(query) ||
-      m.id.toLowerCase().includes(query)
+      (m.phone || '').includes(query) ||
+      String(m.id).includes(query)
     )
   }
 
@@ -134,8 +130,9 @@ const filteredMembers = computed(() => {
 })
 
 const onSearch = () => {}
-const onRefresh = () => {
-  setTimeout(() => { refreshing.value = false }, 1000)
+const onRefresh = async () => {
+  await memberStore.fetchMembers()
+  refreshing.value = false
 }
 const onLoad = () => {
   loading.value = false
@@ -147,6 +144,10 @@ const resetFilter = () => {
 const applyFilter = () => {
   showFilter.value = false
 }
+
+onMounted(() => {
+  memberStore.fetchMembers()
+})
 </script>
 
 <style scoped>

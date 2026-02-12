@@ -8,7 +8,7 @@
     
     <!-- 會員端底部導航 -->
     <van-tabbar v-model="activeTab" route>
-      <van-tabbar-item to="/m" icon="wap-home-o">首頁</van-tabbar-item>
+      <van-tabbar-item to="/m/home" icon="wap-home-o">首頁</van-tabbar-item>
       <van-tabbar-item to="/m/events" icon="calendar-o">活動</van-tabbar-item>
       <van-tabbar-item to="/m/membership" icon="idcard">會籍</van-tabbar-item>
       <van-tabbar-item to="/m/profile" icon="user-o">我的</van-tabbar-item>

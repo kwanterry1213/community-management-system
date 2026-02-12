@@ -1,13 +1,22 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 
 const routes = [
+    // 登入頁
+    {
+        path: '/login',
+        name: 'Login',
+        component: () => import('@/views/Login.vue'),
+        meta: { title: '登入', public: true }
+    },
+
     // 會員端路由 (預設)
     {
         path: '/m',
         component: () => import('@/layouts/MemberLayout.vue'),
+        redirect: '/m/home',
         children: [
             {
-                path: '',
+                path: 'home',
                 name: 'MemberHome',
                 component: () => import('@/views/member/MemberHome.vue'),
                 meta: { title: '首頁' }
@@ -33,13 +42,15 @@ const routes = [
         ]
     },
 
-    // 管理後台路由
+    // 管理後台路由（僅管理員可訪問）
     {
         path: '/admin',
         component: () => import('@/layouts/AdminLayout.vue'),
+        meta: { requiresAdmin: true },
+        redirect: '/admin/dashboard',
         children: [
             {
-                path: '',
+                path: 'dashboard',
                 name: 'AdminHome',
                 component: () => import('@/views/Home.vue'),
                 meta: { title: '儀表板' }
@@ -83,9 +94,43 @@ const router = createRouter({
     routes
 })
 
-// 設置頁面標題
-router.beforeEach((to, from, next) => {
+// 路由守衛 - 未登入跳轉登入頁，後台需要管理員權限
+router.beforeEach(async (to, from, next) => {
     document.title = to.meta.title ? `${to.meta.title} - 未來街坊` : '未來街坊'
+
+    // 公開頁面不需要認證
+    if (to.meta.public) {
+        next()
+        return
+    }
+
+    // 檢查是否已登入
+    const token = localStorage.getItem('token')
+    if (!token) {
+        next({ path: '/login', replace: true })
+        return
+    }
+
+    // 檢查管理員權限
+    if (to.matched.some(r => r.meta.requiresAdmin)) {
+        const { useAuthStore } = await import('@/stores/auth')
+        const { createPinia } = await import('pinia')
+        // 嘗試獲取 store（如果 pinia 已安裝）
+        try {
+            const authStore = useAuthStore()
+            // 確保已載入會籍資訊
+            if (!authStore.membership) {
+                await authStore.fetchMembership()
+            }
+            if (!authStore.isAdmin) {
+                next({ path: '/m/home', replace: true })
+                return
+            }
+        } catch {
+            // pinia 未安裝時允許通過
+        }
+    }
+
     next()
 })
 

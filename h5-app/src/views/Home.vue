@@ -108,7 +108,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useMemberStore } from '@/stores/member'
 import { showToast } from 'vant'
 
@@ -128,10 +128,9 @@ const form = ref({
 })
 
 const membershipOptions = [
-  { text: '普通會員', value: 'normal' },
-  { text: '銀級會員', value: 'silver' },
-  { text: '金級會員', value: 'gold' },
-  { text: '企業會員', value: 'enterprise' }
+  { text: '圈委', value: 'committee' },
+  { text: '圈民', value: 'citizen' },
+  { text: '圈友', value: 'friend' }
 ]
 
 const pendingItems = computed(() => {
@@ -141,7 +140,7 @@ const pendingItems = computed(() => {
     .map(m => ({
       ...m,
       action: m.status === 'pending' ? '新會員申請審核' : '會籍已過期，待續費',
-      statusText: memberStore.statusTypes[m.status].label
+      statusText: memberStore.statusTypes[m.status]?.label || m.status
     }))
 })
 
@@ -156,6 +155,10 @@ const onSubmit = () => {
   showAddMember.value = false
   form.value = { name: '', phone: '', email: '', company: '', membership: '', membershipText: '' }
 }
+
+onMounted(() => {
+  memberStore.fetchMembers()
+})
 </script>
 
 <style scoped>
