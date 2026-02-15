@@ -38,9 +38,9 @@
       <div class="card-title"><van-icon name="apps-o" /> 快捷操作</div>
       <van-grid :column-num="4" :border="false">
         <van-grid-item icon="add-o" text="新增會員" @click="showAddMember = true" />
-        <van-grid-item icon="scan" text="掃碼簽到" />
+        <van-grid-item icon="scan" text="掃碼簽到" to="/admin/scanner" />
         <van-grid-item icon="bill-o" text="收款確認" to="/admin/payments" />
-        <van-grid-item icon="chart-trending-o" text="數據報表" />
+        <van-grid-item icon="calendar-o" text="新增活動" to="/admin/event/create" />
       </van-grid>
     </div>
 

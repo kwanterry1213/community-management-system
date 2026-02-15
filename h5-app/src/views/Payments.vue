@@ -23,19 +23,26 @@
           <div class="payment-header">
             <img :src="item.avatar" class="payment-avatar" />
             <div class="payment-info">
-              <span class="payment-name">{{ item.name }}</span>
-              <span class="payment-id">{{ item.id }}</span>
+              <span class="payment-name">{{ item.username || '未知會員' }}</span>
+              <span class="payment-desc">{{ item.description }}</span>
             </div>
             <span :class="['status-tag', item.statusClass]">{{ item.statusText }}</span>
           </div>
           <div class="payment-body">
-            <div class="payment-row"><span>會籍類型</span><span>{{ item.membershipLabel }}</span></div>
-            <div class="payment-row"><span>應繳金額</span><span class="amount">{{ item.amount }}</span></div>
-            <div class="payment-row"><span>繳費期限</span><span>{{ item.dueDate }}</span></div>
+            <div class="payment-row"><span>分類</span><span>{{ item.membershipLabel }}</span></div>
+            <div class="payment-row"><span>金額</span><span class="amount">${{ item.amount }}</span></div>
+            <div class="payment-row"><span>建立時間</span><span>{{ new Date(item.created_at).toLocaleDateString() }}</span></div>
+            <div class="payment-row"><span>支付方式</span><span>{{ item.method || '未定' }}</span></div>
           </div>
           <div class="payment-actions">
-            <van-button size="small" type="success" icon="success">確認收款</van-button>
-            <van-button size="small" plain icon="bell">發送提醒</van-button>
+            <van-button 
+                v-if="item.status === 'pending'" 
+                size="small" 
+                type="success" 
+                icon="success" 
+                @click="confirmPayment(item)"
+            >確認收款</van-button>
+            <van-button size="small" plain icon="bell" @click="sendReminder(item)">發送提醒</van-button>
           </div>
         </div>
       </div>
@@ -44,19 +51,74 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, computed } from 'vue'
+import { paymentApi } from '@/services/api'
+import { showToast, showDialog } from 'vant'
+import { useAuthStore } from '@/stores/auth'
 
+const authStore = useAuthStore()
 const activeTab = ref('pending')
 const refreshing = ref(false)
+const payments = ref([])
 
-const paymentList = ref([
-  { id: 'M-2024-0160', name: '王建國', avatar: 'https://ui-avatars.com/api/?name=王建國&background=e53e3e&color=fff', membershipLabel: '普通會員', amount: '$3,600', dueDate: '2026-01-15', statusClass: 'expired', statusText: '逾期' },
-  { id: 'M-2024-0164', name: '周雅婷', avatar: 'https://ui-avatars.com/api/?name=周雅婷&background=dd6b20&color=fff', membershipLabel: '普通會員', amount: '$3,600', dueDate: '2026-02-28', statusClass: 'pending', statusText: '即將到期' },
-  { id: 'M-2024-0170', name: '蔡明翰', avatar: 'https://ui-avatars.com/api/?name=蔡明翰&background=3182ce&color=fff', membershipLabel: '銀級會員', amount: '$6,000', dueDate: '2026-03-15', statusClass: 'pending', statusText: '待繳' },
-  { id: 'M-2024-0175', name: '劉怡君', avatar: 'https://ui-avatars.com/api/?name=劉怡君&background=d69e2e&color=fff', membershipLabel: '金級會員', amount: '$12,000', dueDate: '2026-03-31', statusClass: 'pending', statusText: '待繳' },
-])
+const paymentList = computed(() => {
+  return payments.value.filter(p => {
+    if (activeTab.value === 'pending') return p.status === 'pending'
+    if (activeTab.value === 'paid') return p.status === 'paid'
+    if (activeTab.value === 'overdue') return p.status === 'overdue'
+    return true
+  }).map(p => ({
+    ...p,
+    avatar: p.profile_picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(p.username || 'User')}&background=random&color=fff`,
+    statusText: getStatusText(p.status),
+    statusClass: p.status,
+    membershipLabel: p.related_type === 'event' ? '活動費' : '會費'
+  }))
+})
 
-const onRefresh = () => { setTimeout(() => { refreshing.value = false }, 1000) }
+const getStatusText = (status) => {
+    const map = { pending: '待繳費', paid: '已繳費', overdue: '逾期' }
+    return map[status] || status
+}
+
+const fetchPayments = async () => {
+    try {
+        const res = await paymentApi.list({ community_id: 1 }) // Fetch all payments for community (admin view)
+        payments.value = res
+    } catch (error) {
+        showToast('無法獲取繳費列表')
+    } finally {
+        refreshing.value = false
+    }
+}
+
+const onRefresh = () => {
+    fetchPayments()
+}
+
+const confirmPayment = (item) => {
+    showDialog({
+        title: '確認收款',
+        message: `確定收到 ${item.description} 的款項 $${item.amount} 嗎？`,
+        showCancelButton: true
+    }).then(async () => {
+        try {
+            await paymentApi.update(item.id, { status: 'paid' })
+            showToast('收款成功')
+            fetchPayments()
+        } catch (error) {
+            showToast('操作失敗')
+        }
+    })
+}
+
+const sendReminder = (item) => {
+    showToast('已發送提醒 (模擬)')
+}
+
+onMounted(() => {
+    fetchPayments()
+})
 </script>
 
 <style scoped>
@@ -74,8 +136,8 @@ const onRefresh = () => { setTimeout(() => { refreshing.value = false }, 1000) }
 .payment-header { display: flex; align-items: center; margin-bottom: 12px; }
 .payment-avatar { width: 40px; height: 40px; border-radius: 10px; margin-right: 10px; }
 .payment-info { flex: 1; }
-.payment-name { display: block; font-weight: 600; font-size: 14px; }
-.payment-id { font-size: 11px; color: var(--color-gray-400); }
+.payment-name { display: block; font-weight: 600; font-size: 15px; color: #333; }
+.payment-desc { font-size: 12px; color: var(--color-gray-500); }
 .payment-body { background: var(--color-gray-50); border-radius: 8px; padding: 10px; margin-bottom: 12px; }
 .payment-row { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; }
 .payment-row .amount { font-weight: 600; color: var(--color-primary); }

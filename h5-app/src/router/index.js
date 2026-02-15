@@ -8,6 +8,24 @@ const routes = [
         component: () => import('@/views/Login.vue'),
         meta: { title: '登入', public: true }
     },
+    {
+        path: '/admin/scanner',
+        name: 'AdminScanner',
+        component: () => import('@/views/admin/Scanner.vue'),
+        meta: { title: '掃碼簽到', requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/event/create',
+        name: 'EventCreate',
+        component: () => import('@/views/admin/EventEdit.vue'),
+        meta: { title: '新增活動', requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/event/edit/:id',
+        name: 'EventEdit',
+        component: () => import('@/views/admin/EventEdit.vue'),
+        meta: { title: '編輯活動', requiresAuth: true, requiresAdmin: true }
+    },
 
     // 會員端路由 (預設)
     {
@@ -54,6 +72,12 @@ const routes = [
                 name: 'AdminHome',
                 component: () => import('@/views/Home.vue'),
                 meta: { title: '儀表板' }
+            },
+            {
+                path: 'scanner',
+                name: 'AdminScanner',
+                component: () => import('@/views/admin/Scanner.vue'),
+                meta: { title: '掃碼簽到' }
             },
             {
                 path: 'members',

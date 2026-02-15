@@ -85,7 +85,7 @@
         </span>
       </div>
       <div class="event-list" v-if="upcomingEvents.length > 0">
-        <div v-for="event in upcomingEvents" :key="event.id" class="event-card">
+        <div v-for="event in upcomingEvents" :key="event.id" class="event-card" @click="router.push(`/m/events?eventId=${event.id}`)">
           <img :src="getEventImage(event)" class="event-image" />
           <div class="event-info">
             <div class="event-title">{{ event.title }}</div>
@@ -115,8 +115,8 @@
     <van-popup v-model:show="showQR" round style="padding: 20px; text-align: center;">
       <div class="qr-popup">
         <div class="qr-title">會員證 QR Code</div>
-        <div class="qr-code-placeholder">
-          <van-icon name="qr" size="120" color="#1a365d" />
+        <div class="qr-code-placeholder" style="background: white; padding: 10px;">
+          <qrcode-vue :value="authStore.membership?.membership_no || ''" :size="140" level="H" />
         </div>
         <div class="qr-id">{{ authStore.membership?.membership_no || '' }}</div>
         <div class="qr-name">{{ displayName }}</div>
@@ -129,9 +129,13 @@
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { eventApi, announcementApi } from '@/services/api'
+import { useRouter } from 'vue-router'
+import QrcodeVue from 'qrcode.vue'
 
 const authStore = useAuthStore()
+const router = useRouter()
 
+const isAdmin = computed(() => authStore.isAdmin)
 const displayName = computed(() => authStore.currentUser?.username || '會員')
 const avatarUrl = computed(() =>
   authStore.currentUser?.profile_picture_url ||

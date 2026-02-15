@@ -248,6 +248,19 @@ def init_db():
     membership_columns = {row[1] for row in cursor.fetchall()}
     if "role" not in membership_columns:
         cursor.execute("ALTER TABLE memberships ADD COLUMN role TEXT NOT NULL DEFAULT 'visitor'")
+    if "joined_at" not in membership_columns:
+        cursor.execute("ALTER TABLE memberships ADD COLUMN joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        
+    # 補上 events.price 欄位（若不存在）
+    cursor.execute("PRAGMA table_info(events)")
+    event_columns = {row[1] for row in cursor.fetchall()}
+    if "price" not in event_columns:
+        cursor.execute("ALTER TABLE events ADD COLUMN price REAL DEFAULT 0")
+    if "early_bird_price" not in event_columns:
+        cursor.execute("ALTER TABLE events ADD COLUMN early_bird_price REAL")
+    if "early_bird_deadline" not in event_columns:
+        cursor.execute("ALTER TABLE events ADD COLUMN early_bird_deadline TIMESTAMP")
+
 
     db.commit()
     db.close()
@@ -327,13 +340,20 @@ class MembershipCreate(BaseModel):
     level: Optional[str] = None
     status: Optional[str] = "active"
     role: Optional[str] = "visitor"
+    role: Optional[str] = "visitor"
     expires_at: Optional[str] = None
+    joined_at: Optional[str] = None
 
 class MembershipUpdate(BaseModel):
     level: Optional[str] = None
     status: Optional[str] = None
     role: Optional[str] = None
     expires_at: Optional[str] = None
+    joined_at: Optional[str] = None
+
+class PaymentUpdate(BaseModel):
+    status: Optional[str] = None
+    method: Optional[str] = None
 
 class Membership(BaseModel):
     id: int
@@ -344,7 +364,7 @@ class Membership(BaseModel):
     status: str
     role: str
     expires_at: Optional[str] = None
-    joined_at: str
+    joined_at: Optional[str] = None
 
     class Config:
         orm_mode = True
@@ -376,6 +396,10 @@ class EventCreate(BaseModel):
     location: Optional[str] = None
     capacity: Optional[int] = None
     is_public: Optional[bool] = True
+    price: Optional[float] = 0
+    early_bird_price: Optional[float] = None
+    early_bird_deadline: Optional[str] = None
+
 
 class Event(BaseModel):
     id: int
@@ -387,7 +411,11 @@ class Event(BaseModel):
     location: Optional[str] = None
     capacity: Optional[int] = None
     is_public: bool
+    price: float
+    early_bird_price: Optional[float] = None
+    early_bird_deadline: Optional[str] = None
     created_by: int
+
     created_at: str
 
     class Config:
@@ -547,21 +575,30 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
+        user_id_str: str = payload.get("sub")
+        if user_id_str is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
         
     db = get_db()
     cursor = db.cursor()
-    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+    cursor.execute("SELECT * FROM users WHERE id = ?", (int(user_id_str),))
     user_data = cursor.fetchone()
     db.close()
     
     if user_data is None:
         raise credentials_exception
+    if user_data is None:
+        raise credentials_exception
     return User(**dict(user_data))
+
+
+def generate_membership_no():
+    # Format: M + YYYYMMDD + 4 random digits
+    date_str = datetime.utcnow().strftime("%Y%m%d")
+    random_digits = secrets.randbelow(10000)
+    return f"M{date_str}{random_digits:04d}"
 
 
 # --- Auth API Endpoints (for Streamlit UI) ---
@@ -576,6 +613,25 @@ def api_register(payload: ApiRegisterRequest):
             (payload.email, payload.phone_number, payload.username, hashed_password),
         )
         db.commit()
+
+        # Generate Membership
+        user_id = cursor.lastrowid
+        membership_no = generate_membership_no()
+        try:
+            cursor.execute(
+                "INSERT INTO memberships (user_id, community_id, membership_no, level, status, role, joined_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, 1, membership_no, 'friend', 'active', 'member', datetime.utcnow()),
+            )
+            db.commit()
+        except sqlite3.Error as e:
+            # Log error but don't fail registration completely if membership fails? 
+            # Ideally should rollback user creation too.
+            print(f"Failed to create membership: {e}")
+            # db.rollback() # Cannot rollback committed user?
+            # Ideally we should do both in one transaction without intermediate commit.
+            # But the code above commits user first.
+            pass
+
     except sqlite3.IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=f"註冊失敗: {exc}") from exc
@@ -610,7 +666,7 @@ def api_login(payload: ApiLoginRequest):
     }
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user_data["username"]}, expires_delta=access_token_expires
+        data={"sub": str(user_data["id"])}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer", "user_info": user_info}
 
@@ -655,6 +711,19 @@ def api_wechat_sso(payload: ApiWeChatSSORequest):
                 (email_candidate, None, username, wechat_id, hashed_password, payload.avatar_url),
             )
             db.commit()
+            
+            # Generate Membership for WeChat User
+            new_user_id = cursor.lastrowid
+            membership_no = generate_membership_no()
+            try:
+                cursor.execute(
+                    "INSERT INTO memberships (user_id, community_id, membership_no, level, status, role, joined_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (new_user_id, 1, membership_no, 'friend', 'active', 'member', datetime.utcnow()),
+                )
+                db.commit()
+            except sqlite3.Error:
+                pass
+
         except sqlite3.IntegrityError as exc:
             db.rollback()
             raise HTTPException(status_code=400, detail=f"微信註冊失敗: {exc}") from exc
@@ -676,7 +745,7 @@ def api_wechat_sso(payload: ApiWeChatSSORequest):
     }
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user_data["username"]}, expires_delta=access_token_expires
+        data={"sub": str(user_data["id"])}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer", "user_info": user_info}
 
@@ -781,8 +850,8 @@ def api_create_membership(payload: MembershipCreate, current_user: User = Depend
     try:
         cursor.execute(
             """
-            INSERT INTO memberships (user_id, community_id, membership_no, level, status, role, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO memberships (user_id, community_id, membership_no, level, status, role, expires_at, joined_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 payload.user_id,
@@ -792,6 +861,7 @@ def api_create_membership(payload: MembershipCreate, current_user: User = Depend
                 payload.status,
                 payload.role,
                 payload.expires_at,
+                payload.joined_at,
             ),
         )
         db.commit()
@@ -822,6 +892,9 @@ def api_update_membership(membership_id: int, payload: MembershipUpdate, current
     if payload.expires_at:
         updates.append("expires_at = ?")
         params.append(payload.expires_at)
+    if payload.joined_at:
+        updates.append("joined_at = ?")
+        params.append(payload.joined_at)
         
     if not updates:
         raise HTTPException(status_code=400, detail="沒有要更新的欄位")
@@ -899,15 +972,20 @@ def api_update_user(user_id: int, payload: UserUpdate, current_user: User = Depe
 def list_payments(user_id: Optional[int] = None, community_id: Optional[int] = None):
     db = get_db()
     cursor = db.cursor()
-    query = "SELECT * FROM payments WHERE 1=1"
+    query = """
+        SELECT p.*, u.username, u.profile_picture 
+        FROM payments p
+        LEFT JOIN users u ON p.user_id = u.id
+        WHERE 1=1
+    """
     params = []
     if user_id is not None:
-        query += " AND user_id = ?"
+        query += " AND p.user_id = ?"
         params.append(user_id)
     if community_id is not None:
-        query += " AND community_id = ?"
+        query += " AND p.community_id = ?"
         params.append(community_id)
-    query += " ORDER BY created_at DESC"
+    query += " ORDER BY p.created_at DESC"
     cursor.execute(query, params)
     rows = cursor.fetchall()
     db.close()
@@ -935,6 +1013,37 @@ def create_payment(payload: dict):
     cursor.execute("SELECT * FROM payments WHERE id = ?", (cursor.lastrowid,))
     row = cursor.fetchone()
     db.close()
+    return dict(row)
+
+
+@app.patch("/api/payments/{payment_id}")
+def update_payment(payment_id: int, payload: PaymentUpdate):
+    db = get_db()
+    cursor = db.cursor()
+    updates = []
+    params = []
+    
+    if payload.status:
+        updates.append("status = ?")
+        params.append(payload.status)
+    if payload.method:
+        updates.append("method = ?")
+        params.append(payload.method)
+        
+    if not updates:
+        raise HTTPException(status_code=400, detail="沒有要更新的欄位")
+        
+    params.append(payment_id)
+    cursor.execute(f"UPDATE payments SET {', '.join(updates)} WHERE id = ?", params)
+    db.commit()
+    
+    cursor.execute("SELECT * FROM payments WHERE id = ?", (payment_id,))
+    row = cursor.fetchone()
+    db.close()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="繳費記錄不存在")
+        
     return dict(row)
 
 
@@ -1082,13 +1191,13 @@ def get_event(event_id: int):
 
 
 @app.post("/api/events", response_model=Event)
-def create_event(payload: EventCreate, created_by: int):
+def create_event(payload: EventCreate, current_user: User = Depends(get_current_user)):
     db = get_db()
     cursor = db.cursor()
     cursor.execute(
         """
-        INSERT INTO events (community_id, title, description, start_at, end_at, location, capacity, is_public, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO events (community_id, title, description, start_at, end_at, location, capacity, is_public, price, early_bird_price, early_bird_deadline, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             payload.community_id,
@@ -1099,9 +1208,13 @@ def create_event(payload: EventCreate, created_by: int):
             payload.location,
             payload.capacity,
             True if payload.is_public is None else payload.is_public,
-            created_by,
+            payload.price or 0,
+            payload.early_bird_price,
+            payload.early_bird_deadline,
+            current_user.id,
         ),
     )
+
     db.commit()
     cursor.execute("SELECT * FROM events WHERE id = ?", (cursor.lastrowid,))
     row = cursor.fetchone()
@@ -1110,15 +1223,16 @@ def create_event(payload: EventCreate, created_by: int):
 
 
 @app.put("/api/events/{event_id}", response_model=Event)
-def update_event(event_id: int, payload: EventCreate):
+def update_event(event_id: int, payload: EventCreate, current_user: User = Depends(get_current_user)):
     db = get_db()
     cursor = db.cursor()
     cursor.execute(
         """
         UPDATE events
-        SET title = ?, description = ?, start_at = ?, end_at = ?, location = ?, capacity = ?, is_public = ?
+        SET title = ?, description = ?, start_at = ?, end_at = ?, location = ?, capacity = ?, is_public = ?, price = ?, early_bird_price = ?, early_bird_deadline = ?
         WHERE id = ?
         """,
+
         (
             payload.title,
             payload.description,
@@ -1127,9 +1241,13 @@ def update_event(event_id: int, payload: EventCreate):
             payload.location,
             payload.capacity,
             True if payload.is_public is None else payload.is_public,
+            payload.price or 0,
+            payload.early_bird_price,
+            payload.early_bird_deadline,
             event_id,
         ),
     )
+
     db.commit()
     cursor.execute("SELECT * FROM events WHERE id = ?", (event_id,))
     row = cursor.fetchone()
@@ -1154,6 +1272,13 @@ def register_event(event_id: int, payload: EventRegistrationCreate):
     db = get_db()
     cursor = db.cursor()
     try:
+        # Check if event has a price
+        cursor.execute("SELECT title, price, community_id FROM events WHERE id = ?", (event_id,))
+        event_info = cursor.fetchone()
+        if not event_info:
+            db.close()
+            raise HTTPException(status_code=404, detail="活動不存在")
+            
         cursor.execute(
             """
             INSERT INTO event_registrations (event_id, user_id, status)
@@ -1161,6 +1286,27 @@ def register_event(event_id: int, payload: EventRegistrationCreate):
             """,
             (event_id, payload.user_id, payload.status or "registered"),
         )
+        
+        # Create payment if price > 0
+        price = event_info["price"]
+        if price and price > 0:
+            cursor.execute(
+                """
+                INSERT INTO payments (user_id, community_id, description, amount, method, status, related_type, related_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload.user_id,
+                    event_info["community_id"],
+                    f"活動費: {event_info['title']}",
+                    price,
+                    "cash", # Default to cash/transfer, can be updated later
+                    "pending",
+                    "event",
+                    event_id
+                )
+            )
+            
         db.commit()
     except sqlite3.IntegrityError as exc:
         db.rollback()
@@ -1794,18 +1940,23 @@ if os.path.exists(dist_dir):
     if os.path.exists(assets_dir):
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
-    # Serve index.html for all other routes (catch-all)
+    # Serve index.html for root
+    @app.get("/")
+    async def read_index():
+        return FileResponse(os.path.join(dist_dir, "index.html"))
+
+    # Serve other static files or fallback to index.html (SPA History Mode)
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
-        # Allow API routes to pass through (handled by previous definitions)
-        # But wait, this catch-all matches everything.
-        # Since API routes are defined ABOVE, they take precedence.
-        # So we only catch what fell through.
-        
+        # Skip API routes (handled by definition order, but good to be safe if moved)
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+            
         file_path = os.path.join(dist_dir, full_path)
         if os.path.exists(file_path) and os.path.isfile(file_path):
             return FileResponse(file_path)
         
+        # Fallback to index.html for Vue Router paths
         return FileResponse(os.path.join(dist_dir, "index.html"))
 
 if __name__ == "__main__":

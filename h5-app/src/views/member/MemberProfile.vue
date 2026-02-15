@@ -22,7 +22,7 @@
     <van-cell-group inset title="帳號設定" class="section">
       <van-cell title="修改密碼" is-link @click="showPasswordPopup = true" />
       <van-cell title="通知設定" is-link @click="showNotifPopup = true" />
-      <van-cell v-if="authStore.isAdmin" title="進入管理後台" is-link to="/admin" icon="manager-o" />
+      <van-cell v-if="isAdmin" title="進入管理後台" is-link to="/admin" icon="manager-o" />
       <van-cell title="意見回饋" is-link @click="showFeedbackPopup = true" />
     </van-cell-group>
 
@@ -101,6 +101,7 @@ import { useAuthStore } from '@/stores/auth'
 const router = useRouter()
 const authStore = useAuthStore()
 
+const isAdmin = computed(() => authStore.isAdmin)
 const displayName = computed(() => authStore.currentUser?.username || '會員')
 const avatarUrl = computed(() =>
   authStore.currentUser?.profile_picture_url ||

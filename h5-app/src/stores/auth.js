@@ -38,6 +38,20 @@ export const useAuthStore = defineStore('auth', () => {
     const isAdmin = computed(() => userLevel.value === 'admin')
     const isCommitteeOrAbove = computed(() => ['admin', 'committee'].includes(userLevel.value))
 
+    // Helper to extract error message
+    function getErrorMessage(err, defaultMsg) {
+        const detail = err.response?.data?.detail
+        if (typeof detail === 'string') return detail
+        if (Array.isArray(detail)) {
+            // Handle FastAPI 422 validation errors
+            return detail.map(e => e.msg).join(', ')
+        }
+        if (detail && typeof detail === 'object') {
+            return JSON.stringify(detail)
+        }
+        return defaultMsg
+    }
+
     // 登入
     async function login(identifier, password) {
         loading.value = true
@@ -51,7 +65,8 @@ export const useAuthStore = defineStore('auth', () => {
             await fetchMembership()
             return { success: true }
         } catch (err) {
-            return { success: false, message: err.response?.data?.detail || '登入失敗' }
+            console.error('Login error:', err)
+            return { success: false, message: getErrorMessage(err, '登入失敗') }
         } finally {
             loading.value = false
         }
@@ -63,9 +78,11 @@ export const useAuthStore = defineStore('auth', () => {
         try {
             await authApi.register(data)
             // 註冊成功後自動登入
-            return await login(data.email, data.password)
+            await login(data.email || data.username, data.password) // Use email or username for login
+            return { success: true }
         } catch (err) {
-            return { success: false, message: err.response?.data?.detail || '註冊失敗' }
+            console.error('Register error:', err)
+            return { success: false, message: getErrorMessage(err, '註冊失敗') }
         } finally {
             loading.value = false
         }
@@ -112,7 +129,7 @@ export const useAuthStore = defineStore('auth', () => {
             localStorage.setItem('user', JSON.stringify(user.value))
             return { success: true }
         } catch (err) {
-            return { success: false, message: err.response?.data?.detail || '更新失敗' }
+            return { success: false, message: getErrorMessage(err, '更新失敗') }
         }
     }
 

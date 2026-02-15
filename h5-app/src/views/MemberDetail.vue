@@ -19,7 +19,7 @@
         </div>
       </div>
 
-      <!-- 基本資料卡片 -->
+      <!-- 基本資料卡片 (ReadOnly) -->
       <div class="card">
         <div class="card-title"><van-icon name="user-o" /> 基本資料</div>
         <van-cell-group :border="false">
@@ -30,27 +30,64 @@
         </van-cell-group>
       </div>
 
-      <!-- 會籍資訊卡片 -->
+      <!-- 會籍資訊卡片 (Direct Edit) -->
       <div class="card">
-        <div class="card-title"><van-icon name="certificate" /> 會籍資訊</div>
-        <van-cell-group :border="false">
-          <van-cell title="會籍類型">
-            <template #value>
-              <span :class="['membership-badge', member.level]">
-                {{ memberStore.membershipTypes[member.level]?.label || member.level }}
-              </span>
-            </template>
-          </van-cell>
-          <van-cell title="加入日期" :value="member.joinDate" />
-          <van-cell title="到期日期" :value="member.expiryDate || '—'" />
-          <van-cell title="會籍狀態">
-            <template #value>
-              <span :class="['status-tag', member.status]">
-                {{ memberStore.statusTypes[member.status]?.label || member.status }}
-              </span>
-            </template>
-          </van-cell>
-        </van-cell-group>
+        <div class="card-title">
+          <van-icon name="certificate" /> 會籍資訊 (可編輯)
+        </div>
+        <van-form @submit="saveDirectly">
+          <van-cell-group :border="false">
+            <!-- 會籍類型 (Level/Role) -->
+            <van-field
+              v-model="editForm.roleText"
+              is-link
+              readonly
+              label="會籍類型"
+              placeholder="請選擇"
+              @click="showRolePicker = true"
+            />
+            
+            <!-- 加入日期 (Joined At) -->
+            <van-field
+              v-model="editForm.joinDate"
+              is-link
+              readonly
+              label="加入日期"
+              placeholder="請選擇"
+              @click="showJoinCalendar = true"
+            />
+
+            <!-- 到期日期 (Expires At) -->
+            <van-field
+              v-model="editForm.expiryDate"
+              is-link
+              readonly
+              label="到期日期"
+              placeholder="請選擇 (留空為永久)"
+              @click="showExpiryCalendar = true"
+            />
+
+            <!-- 會籍狀態 (Status) -->
+            <van-field
+              v-model="editForm.statusText"
+              is-link
+              readonly
+              label="會籍狀態"
+              placeholder="請選擇"
+              @click="showStatusPicker = true"
+            />
+          </van-cell-group>
+          
+          <div style="padding: 16px;">
+            <van-button 
+                round 
+                block 
+                type="primary" 
+                native-type="submit" 
+                :loading="saving"
+            >儲存會籍變更</van-button>
+          </div>
+        </van-form>
       </div>
 
       <!-- 繳費記錄 -->
@@ -67,72 +104,49 @@
           <div v-if="payments.length === 0" style="text-align: center; padding: 16px; color: #999;">暫無繳費記錄</div>
         </div>
       </div>
+      
+      <div style="height: 100px;"></div> <!-- Spacer -->
 
-      <!-- 底部操作按鈕 -->
-      <div class="action-footer">
-        <van-button type="warning" icon="phone-o" @click="callPhone">撥打電話</van-button>
-        <van-button type="primary" icon="edit" @click="openEditPopup">編輯會籍</van-button>
-      </div>
-
-      <!-- 編輯會籍彈窗 -->
-      <van-popup v-model:show="showEditPopup" position="bottom" round :style="{ height: '50%' }">
-        <div class="popup-header">
-          <span>編輯會籍</span>
-          <van-icon name="cross" @click="showEditPopup = false" />
-        </div>
-        <van-form @submit="saveMembership">
-          <van-cell-group inset>
-            <van-field
-              v-model="editForm.roleText"
-              is-link
-              readonly
-              label="角色權限"
-              placeholder="請選擇角色"
-              @click="showRolePicker = true"
-            />
-            <van-field
-              v-model="editForm.statusText"
-              is-link
-              readonly
-              label="會籍狀態"
-              placeholder="請選擇狀態"
-              @click="showStatusPicker = true"
-            />
-            <van-field
-              v-model="editForm.expiryDate"
-              label="到期日"
-              placeholder="YYYY-MM-DD"
-            />
-          </van-cell-group>
-          <div class="popup-footer">
-            <van-button round block type="primary" native-type="submit" :loading="saving">儲存變更</van-button>
-          </div>
-        </van-form>
-      </van-popup>
-
-      <van-popup v-model:show="showRolePicker" position="bottom">
-        <van-picker
-          :columns="roleOptions"
-          @confirm="onRoleConfirm"
-          @cancel="showRolePicker = false"
-        />
-      </van-popup>
-
-      <van-popup v-model:show="showStatusPicker" position="bottom">
-        <van-picker
-          :columns="statusOptions"
-          @confirm="onStatusConfirm"
-          @cancel="showStatusPicker = false"
-        />
-      </van-popup>
     </template>
 
     <van-empty v-else description="會員不存在" />
+
+    <!-- Pickers & Calendars -->
+    <van-popup v-model:show="showRolePicker" position="bottom">
+      <van-picker
+        :columns="roleOptions"
+        @confirm="onRoleConfirm"
+        @cancel="showRolePicker = false"
+      />
+    </van-popup>
+
+    <van-popup v-model:show="showStatusPicker" position="bottom">
+      <van-picker
+        :columns="statusOptions"
+        @confirm="onStatusConfirm"
+        @cancel="showStatusPicker = false"
+      />
+    </van-popup>
+    
+    <van-calendar 
+        v-model:show="showJoinCalendar" 
+        @confirm="onJoinDateConfirm" 
+        :min-date="minDate"
+        :max-date="maxDate"
+    />
+    
+    <van-calendar 
+        v-model:show="showExpiryCalendar" 
+        @confirm="onExpiryDateConfirm" 
+        :min-date="minDate"
+        :max-date="maxDate"
+    />
+
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useMemberStore } from '@/stores/member'
 import { paymentApi, membershipApi } from '@/services/api'
@@ -143,16 +157,22 @@ const memberStore = useMemberStore()
 
 const member = computed(() => memberStore.getMemberById(route.params.id))
 const payments = ref([])
-const showEditPopup = ref(false)
+const saving = ref(false)
+
 const showRolePicker = ref(false)
 const showStatusPicker = ref(false)
-const saving = ref(false)
+const showJoinCalendar = ref(false)
+const showExpiryCalendar = ref(false)
+
+const minDate = new Date(2020, 0, 1)
+const maxDate = new Date(2030, 11, 31)
 
 const editForm = ref({
   role: '',
   roleText: '',
   status: '',
   statusText: '',
+  joinDate: '',
   expiryDate: ''
 })
 
@@ -170,6 +190,33 @@ const statusOptions = [
   { text: '已停權', value: 'suspended' }
 ]
 
+// Initialize form when member data is available
+watch(member, (newVal) => {
+  if (newVal) initForm(newVal)
+}, { immediate: true })
+
+const initForm = (m) => {
+  // Role mapping
+  const levelToRole = {
+    'admin': 'admin',
+    'committee': 'staff',
+    'citizen': 'member',
+    'friend': 'visitor'
+  }
+  const currentRole = levelToRole[m.level] || 'visitor'
+  const currentRoleOption = roleOptions.find(o => o.value === currentRole)
+  const currentStatusOption = statusOptions.find(o => o.value === m.status)
+
+  editForm.value = {
+    role: currentRole,
+    roleText: currentRoleOption?.text || '圈友',
+    status: m.status,
+    statusText: currentStatusOption?.text || m.status,
+    joinDate: m.joinDate,
+    expiryDate: m.expiryDate !== '—' ? m.expiryDate : ''
+  }
+}
+
 onMounted(async () => {
   if (memberStore.members.length === 0) {
     await memberStore.fetchMembers()
@@ -185,36 +232,7 @@ const callPhone = () => {
   }
 }
 
-const openEditPopup = () => {
-  if (!member.value) return
-  
-  // 查找對應的 role 和 status
-  // 由於 store 已經轉換過 role -> level, 我們需要反向查找或直接用 store 的 level 映射
-  // member.level: admin, committee, citizen, friend
-  // member.status: active, pending, expired
-  
-  const levelToRole = {
-    'admin': 'admin',
-    'committee': 'staff',
-    'citizen': 'member',
-    'friend': 'visitor'
-  }
-  
-  const currentRole = levelToRole[member.value.level] || 'visitor'
-  const currentRoleOption = roleOptions.find(o => o.value === currentRole)
-  
-  const currentStatusOption = statusOptions.find(o => o.value === member.value.status)
-
-  editForm.value = {
-    role: currentRole,
-    roleText: currentRoleOption?.text || '圈友',
-    status: member.value.status,
-    statusText: currentStatusOption?.text || member.value.status,
-    expiryDate: member.value.expiryDate !== '—' ? member.value.expiryDate : ''
-  }
-  showEditPopup.value = true
-}
-
+// Picker Handlers
 const onRoleConfirm = ({ selectedOptions }) => {
   editForm.value.role = selectedOptions[0].value
   editForm.value.roleText = selectedOptions[0].text
@@ -227,34 +245,60 @@ const onStatusConfirm = ({ selectedOptions }) => {
   showStatusPicker.value = false
 }
 
-const saveMembership = async () => {
-  if (!member.value.membershipId) {
-    showToast('無法找到會籍 ID')
-    return
-  }
-  
+const formatDate = (date) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+const onJoinDateConfirm = (date) => {
+  editForm.value.joinDate = formatDate(date)
+  showJoinCalendar.value = false
+}
+
+const onExpiryDateConfirm = (date) => {
+  editForm.value.expiryDate = formatDate(date)
+  showExpiryCalendar.value = false
+}
+
+const saveDirectly = async () => {
   saving.value = true
   try {
-    // role 需要同時更新 level
     const roleToLevel = {
       'admin': 'admin',
       'staff': 'committee',
       'member': 'citizen',
       'visitor': 'friend'
     }
-    
-    await membershipApi.update(member.value.membershipId, {
+
+    const payload = {
       role: editForm.value.role,
-      level: roleToLevel[editForm.value.role], // 同步更新 level
+      level: roleToLevel[editForm.value.role],
       status: editForm.value.status,
-      expires_at: editForm.value.expiryDate ? editForm.value.expiryDate + ' 23:59:59' : null
-    })
+      expires_at: editForm.value.expiryDate ? editForm.value.expiryDate + ' 23:59:59' : null,
+      joined_at: editForm.value.joinDate ? editForm.value.joinDate + ' 00:00:00' : null
+    }
+
+    if (member.value.membershipId) {
+      // Update existing
+      await membershipApi.update(member.value.membershipId, payload)
+      showToast('更新成功')
+    } else {
+      // Create new
+      await membershipApi.create({
+        ...payload,
+        user_id: member.value.id,
+        community_id: 1 // Default to 1
+      })
+      showToast('建立會籍成功')
+    }
     
-    showToast('更新成功')
-    showEditPopup.value = false
-    await memberStore.fetchMembers() // 重新載入列表
+    await memberStore.fetchMembers()
   } catch (err) {
-    showToast(err.response?.data?.detail || '更新失敗')
+    console.error('Update failed:', err)
+    const msg = err.response?.data?.detail || err.message || '更新失敗'
+    showToast(msg)
   } finally {
     saving.value = false
   }
@@ -277,9 +321,17 @@ const saveMembership = async () => {
 .profile-name { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
 .profile-tags { display: flex; gap: 8px; }
 
-.card { margin: 12px; }
+.card { margin: 12px; border-radius: 12px; overflow: hidden; background: white; }
+.card-title {
+    padding: 12px 16px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 1px solid #f5f5f5;
+    background: #fafafa;
+}
 
-.payment-list { display: flex; flex-direction: column; gap: 10px; }
+.payment-list { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
 .payment-item {
   display: flex;
   justify-content: space-between;
@@ -293,30 +345,7 @@ const saveMembership = async () => {
 .payment-desc { font-size: 13px; color: var(--color-gray-700); }
 .payment-amount { font-weight: 600; color: var(--color-success); }
 
-.action-footer {
-  position: fixed;
-  bottom: 60px;
-  left: 0;
-  right: 0;
-  padding: 12px 16px;
-  background: white;
-  display: flex;
-  gap: 12px;
-  box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
-}
-.action-footer .van-button { flex: 1; }
-
-.popup-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px;
-  font-size: 16px;
-  font-weight: 600;
-  border-bottom: 1px solid var(--color-gray-100);
-}
-
-.popup-footer {
-  padding: 16px;
+:deep(.van-field__label) {
+    width: 6em;
 }
 </style>

@@ -79,6 +79,12 @@ export const eventApi = {
     register(eventId, userId) {
         return api.post(`/events/${eventId}/register`, { event_id: eventId, user_id: userId })
     },
+    update(id, data) {
+        return api.put(`/events/${id}`, data)
+    },
+    delete(id) {
+        return api.delete(`/events/${id}`)
+    },
 }
 
 // --- Announcement API ---
@@ -101,6 +107,9 @@ export const paymentApi = {
     },
     create(data) {
         return api.post('/payments', data)
+    },
+    update(id, data) {
+        return api.patch(`/payments/${id}`, data)
     },
 }
 

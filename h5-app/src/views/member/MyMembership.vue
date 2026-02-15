@@ -41,11 +41,9 @@
           <!-- Card Back -->
           <div class="flip-card-back membership-card" :class="authStore.userLevel">
             <div class="card-content back-content">
-              <div class="qr-title">掃描驗證會員身份</div>
-              <div class="qr-frame">
-                <van-icon name="qr" size="140" color="#000" />
+              <div class="qr-code-container">
+                <qrcode-vue :value="authStore.membership?.membership_no || ''" :size="180" level="H" class="qr-canvas" />
               </div>
-              <div class="qr-hint">輕觸卡片翻轉回正面</div>
             </div>
           </div>
 
@@ -97,7 +95,7 @@
     </div>
 
     <van-popup v-model:show="showFullQR" round style="padding: 30px; text-align: center;">
-      <van-icon name="qr" size="200" color="#1a365d" />
+      <qrcode-vue :value="authStore.membership?.membership_no || ''" :size="250" level="H" class="qr-canvas-large" />
       <div style="margin-top: 16px; font-size: 18px; font-weight: 700;">{{ displayName }}</div>
     </van-popup>
 
@@ -122,6 +120,7 @@ import { ref, computed, onMounted } from 'vue'
 import { showToast } from 'vant'
 import { useAuthStore } from '@/stores/auth'
 import { paymentApi } from '@/services/api'
+import QrcodeVue from 'qrcode.vue'
 
 const authStore = useAuthStore()
 const displayName = computed(() => authStore.currentUser?.username || '會員')
@@ -329,9 +328,11 @@ onMounted(async () => { await authStore.fetchMembership(); await fetchPayments()
   width: 100%;
   padding: 24px;
 }
-.qr-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #2d3748; }
-.qr-frame { background: white; padding: 10px; border-radius: 8px; border: 2px solid #e2e8f0; }
-.qr-hint { font-size: 12px; color: #718096; margin-top: 16px; }
+.qr-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #2d3748; display: none; }
+.qr-frame { background: white; padding: 10px; border-radius: 8px; border: 0px solid #e2e8f0; }
+.qr-hint { font-size: 12px; color: #718096; margin-top: 16px; display: none; }
+.qr-canvas { width: 100%; height: auto; display: block; }
+.qr-canvas-large { width: 250px; height: 250px; display: block; margin: 0 auto; }
 
 .interaction-hint { margin-top: 20px; color: rgba(255,255,255,0.7); font-size: 13px; display: flex; align-items: center; gap: 6px; }
 

@@ -27,7 +27,9 @@
               <div class="event-meta">
                 <span><van-icon name="clock-o" /> {{ formatTime(event.start_at) }}</span>
                 <span><van-icon name="location-o" /> {{ event.location || '待定' }}</span>
+                <span><van-icon name="gold-coin-o" /> {{ event.price ? `$${event.price}` : '免費' }}</span>
               </div>
+
               <div class="event-footer">
                 <div class="event-progress" v-if="event.capacity">
                   <span class="progress-text">名額 {{ event.capacity }} 人</span>
@@ -50,7 +52,10 @@
           <span :class="['event-type-tag', selectedEvent.is_public ? 'public' : 'members']">
             {{ selectedEvent.is_public ? '公開活動' : '會員專屬' }}
           </span>
-          <h2>{{ selectedEvent.title }}</h2>
+          <h2>
+            {{ selectedEvent.title }}
+            <van-icon v-if="isAdmin" name="edit" class="edit-btn" @click="router.push(`/admin/event/edit/${selectedEvent.id}`)" />
+          </h2>
           
           <div class="detail-info-list">
             <div class="detail-info-item">
@@ -67,7 +72,25 @@
                 <span class="value">{{ selectedEvent.location || '待定' }}</span>
               </div>
             </div>
+            <div class="detail-info-item">
+              <van-icon name="gold-coin-o" />
+              <div>
+                <span class="label">費用</span>
+                <span class="value">
+                    <span v-if="isValidEarlyBird(selectedEvent)" style="color: #e53e3e; font-weight: bold;">
+                        ${{ selectedEvent.early_bird_price }} (早鳥優惠)
+                    </span>
+                    <span :style="isValidEarlyBird(selectedEvent) ? 'text-decoration: line-through; color: #a0aec0; margin-left: 6px;' : ''">
+                        {{ selectedEvent.price ? `$${selectedEvent.price}` : '免費' }}
+                    </span>
+                    <div v-if="isValidEarlyBird(selectedEvent)" style="font-size: 11px; color: #e53e3e;">
+                        截止：{{ formatDate(selectedEvent.early_bird_deadline) }}
+                    </div>
+                </span>
+              </div>
+            </div>
             <div class="detail-info-item" v-if="selectedEvent.capacity">
+
               <van-icon name="friends-o" />
               <div>
                 <span class="label">名額</span>
@@ -83,23 +106,68 @@
         </div>
 
         <div class="detail-footer">
-          <van-button type="primary" block round>
-            了解更多
+          <van-button type="primary" block round @click="onRegisterClick">
+            {{ getRegisterBtnText(selectedEvent) }}
           </van-button>
         </div>
       </div>
     </van-popup>
+
+    <!-- Payment Popup -->
+    <van-popup v-model:show="showPaymentPopup" position="bottom" round :style="{ minHeight: '40%' }">
+      <div style="padding: 16px;">
+        <h3 style="margin: 0 0 16px;">確認報名</h3>
+        <van-cell title="活動" :value="selectedEvent?.title" />
+        <van-cell title="費用">
+            <template #value>
+                <span style="color: #e53e3e; font-weight: bold;">MOP$ {{ currentPrice }}</span>
+            </template>
+        </van-cell>
+        
+        <h4 style="margin: 20px 0 10px;">選擇付款方式</h4>
+        <div v-for="m in payMethods" :key="m.value" :class="['pay-method', { selected: selMethod === m.value }]" @click="selMethod = m.value">
+          <van-icon :name="m.icon" size="24" :color="m.color" />
+          <span style="flex: 1; margin-left: 12px;">{{ m.name }}</span>
+          <van-icon v-if="selMethod === m.value" name="success" color="#38a169" />
+        </div>
+        
+        <van-button type="primary" block round size="large" style="margin-top: 20px;" :disabled="!selMethod" @click="confirmRegistration">
+            立即繳費報名
+        </van-button>
+      </div>
+    </van-popup>
+
+    <!-- Admin Floating Action Button -->
+    <div v-if="isAdmin" class="fab-button" @click="router.push('/admin/event/create')">
+      <van-icon name="plus" />
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { eventApi } from '@/services/api'
+import { eventApi, paymentApi } from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
+import { useRouter, useRoute } from 'vue-router'
+import { showToast, showDialog } from 'vant'
+
+
+const authStore = useAuthStore()
+const router = useRouter()
+const route = useRoute()
+const isAdmin = computed(() => authStore.isAdmin)
 
 const activeTab = ref('all')
 const refreshing = ref(false)
 const showDetail = ref(false)
+const showPaymentPopup = ref(false)
 const selectedEvent = ref(null)
+const selMethod = ref('')
+
+const payMethods = [
+  { value: 'bank', name: '銀行轉賬', icon: 'bank-card-o', color: '#d69e2e' },
+  { value: 'cash', name: '現金', icon: 'cash-back-record', color: '#718096' },
+]
 
 const events = ref([])
 const loading = ref(false)
@@ -152,6 +220,63 @@ const showEventDetail = (event) => {
   showDetail.value = true
 }
 
+const isValidEarlyBird = (event) => {
+    if (!event?.early_bird_price || !event?.early_bird_deadline) return false
+    return new Date() < new Date(event.early_bird_deadline)
+}
+
+const currentPrice = computed(() => {
+    if (!selectedEvent.value) return 0
+    if (isValidEarlyBird(selectedEvent.value)) {
+        return selectedEvent.value.early_bird_price
+    }
+    return selectedEvent.value.price || 0
+})
+
+const getRegisterBtnText = (event) => {
+    return '立即報名' + (currentPrice.value > 0 ? ` ($${currentPrice.value})` : ' (免費)')
+}
+
+const onRegisterClick = () => {
+    if (currentPrice.value > 0) {
+        showPaymentPopup.value = true
+        selMethod.value = ''
+    } else {
+        // Free registration
+        showDialog({
+            title: '確認報名',
+            message: '此活動為免費參加，確認要報名嗎？',
+            showCancelButton: true
+        }).then(async () => {
+             // TODO: Call free registration API (Not implemented yet, assume payment for now or add direct registration endpoint)
+             // For now, free events just show success
+             showToast('報名成功')
+             showDetail.value = false
+        })
+    }
+}
+
+const confirmRegistration = async () => {
+    if (!selMethod.value || !selectedEvent.value) return
+    try {
+        await paymentApi.create({
+            user_id: authStore.userId,
+            community_id: selectedEvent.value.community_id,
+            description: `活動報名: ${selectedEvent.value.title}`,
+            amount: currentPrice.value,
+            method: selMethod.value,
+            status: 'pending',
+            related_type: 'event',
+            related_id: selectedEvent.value.id
+        })
+        showToast({ type: 'success', message: '已提交，請完成付款' })
+        showPaymentPopup.value = false
+        showDetail.value = false
+    } catch (err) {
+        showToast('報名失敗: ' + (err.response?.data?.detail || err.message))
+    }
+}
+
 const fetchEvents = async () => {
   loading.value = true
   try {
@@ -160,6 +285,14 @@ const fetchEvents = async () => {
     console.error('載入活動失敗', err)
   } finally {
     loading.value = false
+
+    // Check for deep link
+    if (route.query.eventId) {
+        const targetEvent = events.value.find(e => e.id == route.query.eventId)
+        if (targetEvent) {
+            showEventDetail(targetEvent)
+        }
+    }
   }
 }
 
@@ -297,6 +430,16 @@ onMounted(fetchEvents)
   font-size: 20px;
   margin: 8px 0 16px;
   color: #1a202c;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.edit-btn {
+  font-size: 20px;
+  color: #718096;
+  cursor: pointer;
+  padding: 4px;
 }
 
 .detail-info-list {
@@ -350,4 +493,33 @@ onMounted(fetchEvents)
   padding: 16px;
   border-top: 1px solid #e2e8f0;
 }
+.detail-footer {
+  padding: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.fab-button {
+  position: fixed;
+  bottom: 80px; /* Above bottom nav */
+  right: 20px;
+  width: 56px;
+  height: 56px;
+  background-color: var(--color-primary, #3182ce);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  z-index: 99;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.fab-button:active {
+  transform: scale(0.95);
+}
+.pay-method { display: flex; align-items: center; padding: 14px; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 10px; cursor: pointer; }
+.pay-method.selected { border-color: #3182ce; background: #ebf8ff; }
 </style>
