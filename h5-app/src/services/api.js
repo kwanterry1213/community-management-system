@@ -133,4 +133,13 @@ export const dashboardApi = {
     },
 }
 
+// --- Common API ---
+export const commonApi = {
+    upload(file) {
+        const formData = new FormData()
+        formData.append('file', file)
+        return api.post('/upload', formData)
+    }
+}
+
 export default api

@@ -1,17 +1,16 @@
 import streamlit as st
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
 from typing import List, Optional
 import sqlite3
 from passlib.context import CryptContext
-
+import shutil
 import secrets
 import os
 from fastapi.staticfiles import StaticFiles
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 
@@ -151,6 +150,7 @@ def init_db():
         start_at TIMESTAMP NOT NULL,
         end_at TIMESTAMP,
         location TEXT,
+        image_url TEXT,
         capacity INTEGER,
         is_public BOOLEAN DEFAULT TRUE,
         created_by INTEGER NOT NULL,
@@ -247,7 +247,24 @@ def init_db():
     cursor.execute("PRAGMA table_info(memberships)")
     membership_columns = {row[1] for row in cursor.fetchall()}
     if "role" not in membership_columns:
+        # Check if column exists before adding - Wait, if "role" is NOT in columns, we add it.
+        # But wait, checking logic:
+        # The existing code was:
+        # cursor.execute("ALTER TABLE memberships ADD COLUMN role TEXT NOT NULL DEFAULT 'visitor'")
+        # I should keep it.
         cursor.execute("ALTER TABLE memberships ADD COLUMN role TEXT NOT NULL DEFAULT 'visitor'")
+
+    # --- New Migration: Add image_url to events ---
+    cursor.execute("PRAGMA table_info(events)")
+    event_columns = {row[1] for row in cursor.fetchall()}
+    if "image_url" not in event_columns:
+        cursor.execute("ALTER TABLE events ADD COLUMN image_url TEXT")
+    
+    # --- New Migration: Add early_bird columns to events (If missing from previous step) ---
+    if "early_bird_price" not in event_columns:
+         cursor.execute("ALTER TABLE events ADD COLUMN early_bird_price REAL")
+    if "early_bird_deadline" not in event_columns:
+         cursor.execute("ALTER TABLE events ADD COLUMN early_bird_deadline TIMESTAMP")
     if "joined_at" not in membership_columns:
         cursor.execute("ALTER TABLE memberships ADD COLUMN joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
         
@@ -397,6 +414,7 @@ class EventCreate(BaseModel):
     capacity: Optional[int] = None
     is_public: Optional[bool] = True
     price: Optional[float] = 0
+    image_url: Optional[str] = None
     early_bird_price: Optional[float] = None
     early_bird_deadline: Optional[str] = None
 
@@ -409,6 +427,7 @@ class Event(BaseModel):
     start_at: str
     end_at: Optional[str] = None
     location: Optional[str] = None
+    image_url: Optional[str] = None
     capacity: Optional[int] = None
     is_public: bool
     price: float
@@ -1196,8 +1215,8 @@ def create_event(payload: EventCreate, current_user: User = Depends(get_current_
     cursor = db.cursor()
     cursor.execute(
         """
-        INSERT INTO events (community_id, title, description, start_at, end_at, location, capacity, is_public, price, early_bird_price, early_bird_deadline, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO events (community_id, title, description, start_at, end_at, location, image_url, capacity, is_public, price, early_bird_price, early_bird_deadline, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             payload.community_id,
@@ -1206,6 +1225,7 @@ def create_event(payload: EventCreate, current_user: User = Depends(get_current_
             payload.start_at,
             payload.end_at,
             payload.location,
+            payload.image_url,
             payload.capacity,
             True if payload.is_public is None else payload.is_public,
             payload.price or 0,
@@ -1229,7 +1249,7 @@ def update_event(event_id: int, payload: EventCreate, current_user: User = Depen
     cursor.execute(
         """
         UPDATE events
-        SET title = ?, description = ?, start_at = ?, end_at = ?, location = ?, capacity = ?, is_public = ?, price = ?, early_bird_price = ?, early_bird_deadline = ?
+        SET title = ?, description = ?, start_at = ?, end_at = ?, location = ?, image_url = ?, capacity = ?, is_public = ?, price = ?, early_bird_price = ?, early_bird_deadline = ?
         WHERE id = ?
         """,
 
@@ -1239,6 +1259,7 @@ def update_event(event_id: int, payload: EventCreate, current_user: User = Depen
             payload.start_at,
             payload.end_at,
             payload.location,
+            payload.image_url,
             payload.capacity,
             True if payload.is_public is None else payload.is_public,
             payload.price or 0,
@@ -1931,6 +1952,64 @@ def run_streamlit_ui():
     # different files and run FastAPI separately, with Streamlit acting as the frontend.
 
 
+# --- Uploads Handling ---
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
+
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    try:
+        # Generate safe filename
+        file_ext = os.path.splitext(file.filename)[1]
+        filename = f"{secrets.token_hex(8)}{file_ext}"
+        file_path = os.path.join(UPLOAD_DIR, filename)
+        
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        return {"url": f"/uploads/{filename}"}
+    except Exception as e:
+        print(f"Upload error: {e}") # Debug print
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/debug-upload")
+async def debug_upload():
+    return {
+        "upload_dir": UPLOAD_DIR,
+        "exists": os.path.exists(UPLOAD_DIR),
+        "writable": os.access(UPLOAD_DIR, os.W_OK),
+        "files_count": len(os.listdir(UPLOAD_DIR)) if os.path.exists(UPLOAD_DIR) else 0
+    }
+
+# --- Debug/Backup Endpoints ---
+ADMIN_SECRET = "mvp_admin_secret_123"  # 簡單的保護機制，正式環境請改用更安全的驗證
+
+@app.get("/api/debug/db")
+def download_db(secret: str):
+    """下載資料庫備份"""
+    if secret != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    if os.path.exists(DATABASE_NAME):
+        return FileResponse(DATABASE_NAME, filename="community_app.db", media_type="application/x-sqlite3")
+    raise HTTPException(status_code=404, detail="Database not found")
+
+@app.post("/api/debug/db")
+async def upload_db(secret: str, file: UploadFile = File(...)):
+    """上傳並覆蓋資料庫 (還原備份)"""
+    if secret != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    try:
+        # 寫入新檔案
+        with open(DATABASE_NAME, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        return {"message": "Database restored successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # --- Frontend Static Files (SPA) ---
 dist_dir = os.path.join(os.path.dirname(__file__), "h5-app", "dist")
 
@@ -1958,6 +2037,21 @@ if os.path.exists(dist_dir):
         
         # Fallback to index.html for Vue Router paths
         return FileResponse(os.path.join(dist_dir, "index.html"))
+
+else:
+    @app.get("/")
+    async def read_index_fallback():
+        return HTMLResponse(content="""
+        <html>
+            <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+                <h1 style="color: #e53e3e;">⚠️ 前端檔案未找到 (Frontend Not Found)</h1>
+                <p>系統找不到 <code>h5-app/dist</code> 資料夾。</p>
+                <p>請確認您在遷移時，是否遺漏了複製這個資料夾？</p>
+                <hr>
+                <p style="color: gray;">System could not find 'h5-app/dist'. Please ensure it is copied from the source.</p>
+            </body>
+        </html>
+        """)
 
 if __name__ == "__main__":
     run_streamlit_ui()

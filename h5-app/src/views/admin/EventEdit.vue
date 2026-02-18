@@ -9,6 +9,10 @@
     <div class="form-content">
       <van-cell-group inset>
         <!-- 基本資訊 -->
+        <div class="upload-section">
+           <van-uploader v-model="fileList" :max-count="1" :after-read="afterRead" upload-text="上傳封面" />
+        </div>
+
         <van-field
           v-model="form.title"
           label="活動名稱"
@@ -52,7 +56,8 @@
         <div class="field-help">若不限名額請留空或填 0</div>
 
         <!-- Early Bird -->
-        <van-cell-group inset title="早鳥優惠 (選填)" style="margin: 0 -16px 16px -16px">
+        <div class="section-divider">早鳥優惠 (選填)</div>
+        
           <van-field
             v-model.number="form.early_bird_price"
             label="早鳥價"
@@ -76,7 +81,6 @@
             left-icon="clock-o"
             @click="showEbTime = true"
           />
-        </van-cell-group>
 
         <!-- Smart Date Inputs -->
         <van-field
@@ -168,7 +172,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { eventApi } from '@/services/api'
+import { eventApi, commonApi } from '@/services/api'
 import { showToast, showLoadingToast, showSuccessToast, showFailToast, showDialog } from 'vant'
 
 const router = useRouter()
@@ -183,6 +187,8 @@ const showStartTime = ref(false)
 const showEndTime = ref(false)
 const showEbTime = ref(false)
 
+const fileList = ref([])
+
 const form = ref({
   title: '',
   description: '',
@@ -190,6 +196,7 @@ const form = ref({
   price: 0,
   capacity: null,
   is_public: true,
+  image_url: '',
   early_bird_price: null,
   start_date_str: '',
   start_time: '12:00',
@@ -201,6 +208,22 @@ const form = ref({
   eb_time: '23:59',
   eb_time_picker: ['23', '59']
 })
+
+const afterRead = async (file) => {
+  file.status = 'uploading'
+  file.message = '上傳中...'
+  try {
+    const res = await commonApi.upload(file.file)
+    form.value.image_url = res.url
+    file.status = 'done'
+    file.message = '上傳成功'
+  } catch (err) {
+    file.status = 'failed'
+    file.message = '上傳失敗'
+    const errorMsg = err.response?.data?.detail || err.message || '未知錯誤'
+    showDialog({ title: '上傳失敗', message: '錯誤詳情: ' + errorMsg })
+  }
+}
 
 // Smart Date Input Logic
 const handleDateInput = (val, field) => {
@@ -269,6 +292,7 @@ const onSubmit = async () => {
       price: Number(form.value.price) || 0,
       capacity: form.value.capacity ? Number(form.value.capacity) : null,
       is_public: form.value.is_public,
+      image_url: form.value.image_url,
       start_at: combineDateTime(form.value.start_date_str, form.value.start_time),
       end_at: combineDateTime(form.value.end_date_str, form.value.end_time),
       early_bird_price: form.value.early_bird_price ? Number(form.value.early_bird_price) : null,
@@ -281,7 +305,7 @@ const onSubmit = async () => {
       toast.close()
       showSuccessToast('更新成功')
     } else {
-      await eventApi.create(payload)
+      await eventApi.create(payload, 1) // Assume createdBy=1 (System Admin) for now, or check authStore
       toast.close()
       showSuccessToast('建立成功')
     }
@@ -326,6 +350,11 @@ const fetchEvent = async (id) => {
     form.value.capacity = data.capacity
     form.value.is_public = data.is_public
     form.value.early_bird_price = data.early_bird_price
+    form.value.image_url = data.image_url
+
+    if (data.image_url) {
+        fileList.value = [{ url: data.image_url, isImage: true }]
+    }
 
     // Parse Dates
     if (data.start_at) {
@@ -375,6 +404,20 @@ onMounted(async () => {
 }
 .form-content {
   padding: 16px 0;
+}
+.upload-section {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  background: white;
+  margin: 0 16px 16px;
+  border-radius: 12px;
+}
+.section-divider {
+  font-size: 14px;
+  color: #969799;
+  padding: 16px 16px 8px;
+  background-color: #fff;
 }
 .action-buttons {
   padding: 24px 16px;

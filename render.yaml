@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: community-management-system
+    env: python
+    buildCommand: "./render-build.sh"
+    startCommand: "uvicorn app:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: NODE_VERSION
+        value: 18.16.0

@@ -5,3 +5,6 @@ pydantic>=1.8.0
 passlib[bcrypt]
 python-jose[cryptography]
 streamlit
+aiofiles
+jinja2
+requests

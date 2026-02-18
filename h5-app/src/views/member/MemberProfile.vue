@@ -1,13 +1,12 @@
 <template>
   <div class="profile-page">
-    <div class="profile-header">
-      <div class="header-bg"></div>
-      <div class="header-content">
-        <img :src="avatarUrl" class="profile-avatar" />
-        <div class="profile-info">
-          <h2 class="profile-name">{{ displayName }}</h2>
-          <span class="profile-level">{{ authStore.levelInfo.icon }} {{ authStore.levelInfo.name }}</span>
-        </div>
+    <van-nav-bar title="我的" />
+
+    <div class="profile-summary">
+      <img :src="avatarUrl" class="profile-avatar" />
+      <div class="profile-info">
+        <h2 class="profile-name">{{ displayName }}</h2>
+        <span class="profile-level">{{ authStore.levelInfo.icon }} {{ authStore.levelInfo.name }}</span>
       </div>
     </div>
 
@@ -167,12 +166,44 @@ const handleLogout = () => {
 
 <style scoped>
 .profile-page { min-height: 100vh; background: #f5f7fa; padding-bottom: 90px; }
-.profile-header { position: relative; height: 180px; background: linear-gradient(135deg, #1a365d, #2c5282); }
-.header-content { position: absolute; bottom: -40px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; }
-.profile-avatar { width: 80px; height: 80px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-.profile-info { text-align: center; margin-top: 8px; }
-.profile-name { font-size: 20px; font-weight: 700; color: #1a202c; margin: 0; }
-.profile-level { font-size: 13px; color: #718096; }
+/* 個人簡介摘要 */
+.profile-summary {
+  display: flex;
+  align-items: center;
+  padding: 20px;
+  background: #fff;
+  margin-bottom: 12px;
+}
+
+.profile-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  margin-right: 16px;
+}
+
+.profile-info {
+  flex: 1;
+}
+
+.profile-name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1a202c;
+}
+
+.profile-level {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 13px;
+  color: #718096;
+  background: #edf2f7;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
 .section { margin-top: 16px; }
 .section:first-of-type { margin-top: 56px; }
 .logout-section { padding: 24px 16px; }

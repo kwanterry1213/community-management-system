@@ -1,19 +1,11 @@
 <template>
   <div class="member-home">
-    <!-- 頂部歡迎區 -->
-    <div class="welcome-header">
-      <div class="welcome-bg"></div>
-      <div class="welcome-content">
-        <div class="user-greeting">
-          <img :src="avatarUrl" class="user-avatar" />
-          <div class="greeting-text">
-            <span class="greeting">{{ greeting }}，</span>
-            <span class="user-name">{{ displayName }}</span>
-          </div>
-        </div>
-        <van-icon name="bell" size="24" color="#fff" badge="2" />
-      </div>
-    </div>
+    <!-- 頂部導航 -->
+    <van-nav-bar title="首頁">
+      <template #right>
+        <van-icon name="bell" size="24" badge="2" color="#323233" />
+      </template>
+    </van-nav-bar>
 
     <!-- 會籍狀態卡 -->
     <div class="membership-card" :class="authStore.userLevel">
@@ -27,7 +19,15 @@
           <div class="member-name">{{ displayName }}</div>
           <div class="member-since">加入於 {{ authStore.membership?.joined_at?.split('T')[0] || '—' }}</div>
         </div>
-        <div class="card-footer" v-if="authStore.userLevel !== 'friend'">
+        <div class="card-footer" v-if="authStore.userLevel === 'admin'">
+          <div class="admin-stats">
+             <span><van-icon name="manager" /> 管理員權限已啟用</span>
+          </div>
+          <van-button size="small" round color="#ecc94b" style="color: #000; font-weight: bold;" @click="$router.push('/admin/events')">
+            進入管理後台
+          </van-button>
+        </div>
+        <div class="card-footer" v-else-if="authStore.userLevel !== 'friend'">
           <div class="expiry-info">
             <van-icon name="clock-o" />
             <span>會籍到期：{{ authStore.membership?.expires_at?.split('T')[0] || '—' }}</span>
@@ -247,15 +247,18 @@ onMounted(async () => {
 }
 
 /* 會籍卡 */
+/* Default background to avoid white flash */
 .membership-card {
   margin: 16px;
   border-radius: 16px;
   overflow: hidden;
   position: relative;
-  aspect-ratio: 1.586;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+  /* aspect-ratio: 1.586; */ /* Too tall */
+  height: 180px; /* Fixed height for better proportion */
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1); /* Softer shadow */
   cursor: pointer;
   transition: transform 0.2s;
+  background: linear-gradient(135deg, #718096, #4a5568); /* Default to friend style */
 }
 
 .membership-card:active {
@@ -265,6 +268,8 @@ onMounted(async () => {
 .membership-card.committee { background: linear-gradient(135deg, #d69e2e, #b7791f); }
 .membership-card.citizen { background: linear-gradient(135deg, #3182ce, #2c5282); }
 .membership-card.friend { background: linear-gradient(135deg, #718096, #4a5568); }
+.membership-card.admin { background: linear-gradient(135deg, #1a202c, #2d3748); border: 1px solid #4a5568; }
+.membership-card.admin { background: linear-gradient(135deg, #1a202c, #2d3748); border: 1px solid #4a5568; }
 
 .card-bg-pattern {
   position: absolute;
