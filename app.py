@@ -1077,10 +1077,13 @@ def get_dashboard_stats(community_id: Optional[int] = None):
     cursor.execute(f"SELECT COUNT(*) as cnt FROM memberships {cond}", params)
     total_members = cursor.fetchone()["cnt"]
 
-    cursor.execute(f"SELECT COUNT(*) as cnt FROM memberships {cond.replace('WHERE', 'WHERE status = \"active\" AND') if cond else 'WHERE status = \"active\"'}", params)
+    # Calculate conditions for active and expired members
+    active_cond = cond.replace('WHERE', "WHERE status = 'active' AND") if cond else "WHERE status = 'active'"
+    cursor.execute(f"SELECT COUNT(*) as cnt FROM memberships {active_cond}", params)
     active_members = cursor.fetchone()["cnt"]
 
-    cursor.execute(f"SELECT COUNT(*) as cnt FROM memberships {cond.replace('WHERE', 'WHERE status = \"expired\" AND') if cond else 'WHERE status = \"expired\"'}", params)
+    expired_cond = cond.replace('WHERE', "WHERE status = 'expired' AND") if cond else "WHERE status = 'expired'"
+    cursor.execute(f"SELECT COUNT(*) as cnt FROM memberships {expired_cond}", params)
     expired_members = cursor.fetchone()["cnt"]
 
     pending_members = total_members - active_members - expired_members
