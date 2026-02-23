@@ -5,7 +5,7 @@
       <!-- Logo 區 -->
       <div class="logo-section">
         <div class="logo-icon">
-          <img src="/images/logo.jpg" alt="Logo" class="logo-image" />
+          <img src="/images/login-logo.png" alt="Logo" class="logo-image" />
         </div>
         <h1 class="app-title">未來街坊圈</h1>
         <p class="app-subtitle">商務社團管理系統</p>
@@ -161,11 +161,11 @@ const handleRegister = async () => {
 }
 
 .logo-icon {
-  width: 125px;
-  height: 125px;
+  width: 188px;
+  height: 188px;
   border-radius: 50%;
   overflow: hidden;
-  background: white;
+  background: #1a365d;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -177,7 +177,8 @@ const handleRegister = async () => {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  padding: 2px;
+  padding: 20px;
+  filter: brightness(0) invert(1);
 }
 
 .app-title {

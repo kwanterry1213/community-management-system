@@ -1341,6 +1341,60 @@ def register_event(event_id: int, payload: EventRegistrationCreate):
     return EventRegistration(**dict(row))
 
 
+class EventCheckInRequest(BaseModel):
+    event_id: int
+    membership_no: str
+
+@app.post("/api/events/checkin")
+def check_in_event(payload: EventCheckInRequest, current_user: User = Depends(get_current_user)):
+    db = get_db()
+    cursor = db.cursor()
+    
+    # Check permission (Admin or Staff/Committee)
+    cursor.execute("SELECT role FROM memberships WHERE user_id = ?", (current_user.id,))
+    current_mem = cursor.fetchone()
+    if not current_mem or current_mem['role'] not in ['admin', 'staff', 'moderator']:
+        db.close()
+        raise HTTPException(status_code=403, detail="權限不足")
+
+    # Find target user
+    cursor.execute("SELECT user_id, username FROM memberships m JOIN users u ON m.user_id = u.id WHERE m.membership_no = ?", (payload.membership_no,))
+    target = cursor.fetchone()
+    if not target:
+        db.close()
+        raise HTTPException(status_code=404, detail="找不到該會員")
+    
+    target_user_id = target['user_id']
+    target_username = target['username']
+
+    # Check registration
+    cursor.execute("SELECT * FROM event_registrations WHERE event_id = ? AND user_id = ?", (payload.event_id, target_user_id))
+    registration = cursor.fetchone()
+    
+    if registration:
+        if registration['status'] == 'checked_in':
+            db.close()
+            return {"status": "already_checked_in", "message": f"{target_username} 已簽到過"}
+        
+        cursor.execute("UPDATE event_registrations SET status = 'checked_in' WHERE id = ?", (registration['id'],))
+        db.commit()
+        db.close()
+        return {"status": "checked_in", "message": f"{target_username} 簽到成功"}
+    else:
+        # Auto register
+        try:
+            cursor.execute(
+                "INSERT INTO event_registrations (event_id, user_id, status) VALUES (?, ?, ?)",
+                (payload.event_id, target_user_id, 'checked_in')
+            )
+            db.commit()
+            db.close()
+            return {"status": "checked_in", "message": f"{target_username} 現場報名並簽到成功"}
+        except Exception as e:
+            db.close()
+            raise HTTPException(status_code=400, detail=f"簽到失敗: {str(e)}")
+
+
 # --- Albums & Photos API ---
 @app.get("/api/albums", response_model=List[Album])
 def list_albums(community_id: Optional[int] = None):

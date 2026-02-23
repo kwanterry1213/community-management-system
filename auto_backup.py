@@ -4,7 +4,7 @@ import os
 import datetime
 
 # 設定您的 Render 網址
-APP_URL = "https://your-app-name.onrender.com" 
+APP_URL = "https://community-management-system-v0gq.onrender.com" 
 # 設定密鑰 (需與 app.py 中的 ADMIN_SECRET 一致)
 SECRET = "mvp_admin_secret_123"
 # 備份間隔 (秒)

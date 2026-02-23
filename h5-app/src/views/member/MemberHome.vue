@@ -74,6 +74,12 @@
         </div>
         <span>設定</span>
       </div>
+      <div class="action-item" @click="$router.push('/admin/scanner')" v-if="authStore.isCommitteeOrAbove">
+        <div class="action-icon scanner">
+          <van-icon name="scan" size="24" />
+        </div>
+        <span>掃碼簽到</span>
+      </div>
     </div>
 
     <!-- 近期活動 -->
@@ -412,6 +418,7 @@ onMounted(async () => {
 .action-icon.membership { background: linear-gradient(135deg, #3182ce, #2c5282); }
 .action-icon.qrcode { background: linear-gradient(135deg, #805ad5, #6b46c1); }
 .action-icon.profile { background: linear-gradient(135deg, #718096, #4a5568); }
+.action-icon.scanner { background: linear-gradient(135deg, #ed8936, #dd6b20); }
 
 .action-item span {
   font-size: 12px;

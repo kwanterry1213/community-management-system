@@ -12,7 +12,7 @@ const routes = [
         path: '/admin/scanner',
         name: 'AdminScanner',
         component: () => import('@/views/admin/Scanner.vue'),
-        meta: { title: '掃碼簽到', requiresAuth: true, requiresAdmin: true }
+        meta: { title: '掃碼簽到', requiresAuth: true, requiresCommittee: true }
     },
     {
         path: '/admin/event/create',
@@ -138,7 +138,6 @@ router.beforeEach(async (to, from, next) => {
     // 檢查管理員權限
     if (to.matched.some(r => r.meta.requiresAdmin)) {
         const { useAuthStore } = await import('@/stores/auth')
-        const { createPinia } = await import('pinia')
         // 嘗試獲取 store（如果 pinia 已安裝）
         try {
             const authStore = useAuthStore()
@@ -152,6 +151,22 @@ router.beforeEach(async (to, from, next) => {
             }
         } catch {
             // pinia 未安裝時允許通過
+        }
+    }
+
+    // 檢查圈委權限
+    if (to.matched.some(r => r.meta.requiresCommittee)) {
+        const { useAuthStore } = await import('@/stores/auth')
+        try {
+            const authStore = useAuthStore()
+            if (!authStore.membership) {
+                await authStore.fetchMembership()
+            }
+            if (!authStore.isCommitteeOrAbove) {
+                next({ path: '/m/home', replace: true })
+                return
+            }
+        } catch {
         }
     }
 
