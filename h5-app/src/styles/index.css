@@ -177,17 +177,17 @@ body {
     font-weight: 500;
 }
 
-.status-tag.active {
+.status-tag.paid, .status-tag.active {
     background: rgba(56, 161, 105, 0.1);
     color: var(--color-success);
 }
 
 .status-tag.pending {
-    background: rgba(49, 130, 206, 0.1);
-    color: var(--color-info);
+    background: rgba(221, 107, 32, 0.1);
+    color: var(--color-warning);
 }
 
-.status-tag.expired {
+.status-tag.overdue, .status-tag.expired {
     background: rgba(229, 62, 62, 0.1);
     color: var(--color-danger);
 }

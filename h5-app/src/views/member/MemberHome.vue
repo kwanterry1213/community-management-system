@@ -3,7 +3,7 @@
     <!-- 頂部導航 -->
     <van-nav-bar title="首頁">
       <template #right>
-        <van-icon name="bell" size="24" badge="2" color="#323233" />
+        <van-icon name="bell" size="24" badge="2" color="#323233" @click="$router.push('/m/notifications')" />
       </template>
     </van-nav-bar>
 

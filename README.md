@@ -2,6 +2,10 @@
 
 一個功能完整的 H5 商務社團管理系統，支援會員管理、活動發布、相冊分享等功能。
 
+Email: test2@example.com
+Username: testuser2
+Password: password123
+
 ## ✨ 主要功能
 
 ### 會員功能

@@ -11,11 +11,18 @@ ENV/
 *.egg-info/
 dist/
 build/
+.pytest_cache/
 
 # Database
 *.db
 *.sqlite
 *.sqlite3
+
+# Backups
+backups/
+
+# Uploads
+uploads/
 
 # Environment variables
 .env
@@ -31,10 +38,17 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+*.png
 
 # Logs
 *.log
 
-# Temporary files
-*.tmp
+# Temporary / one-time-use files
 temp/
+
+# Archived / unused files
+backupFiles/
+
+# Node
+h5-app/node_modules/
+h5-app/dist/

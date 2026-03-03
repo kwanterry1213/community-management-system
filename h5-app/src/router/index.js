@@ -40,6 +40,12 @@ const routes = [
                 meta: { title: '首頁' }
             },
             {
+                path: 'notifications',
+                name: 'Notifications',
+                component: () => import('@/views/Notifications.vue'),
+                meta: { title: '通知中心' }
+            },
+            {
                 path: 'events',
                 name: 'Events',
                 component: () => import('@/views/member/Events.vue'),
@@ -96,6 +102,12 @@ const routes = [
                 name: 'Payments',
                 component: () => import('@/views/Payments.vue'),
                 meta: { title: '繳費管理' }
+            },
+            {
+                path: 'reports',
+                name: 'Reports',
+                component: () => import('@/views/Reports.vue'),
+                meta: { title: '報表統計' }
             },
             {
                 path: 'profile',

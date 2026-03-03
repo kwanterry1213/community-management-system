@@ -3,6 +3,53 @@ from crewai import Agent, Task, Crew, Process, LLM
 # ✅ 這是新版寫法，必須安裝 crewai-tools
 from crewai_tools import FileReadTool
 
+# date utilities for billing job
+from datetime import datetime, timedelta
+from app import get_db
+
+
+def run_due_payment_job(community_id: int = None):
+    db = get_db()
+    cursor = db.cursor()
+    cutoff = datetime.utcnow() + timedelta(days=30)
+    cond = "WHERE expires_at IS NOT NULL AND status = 'active'"
+    params = []
+    if community_id is not None:
+        cond += " AND community_id = ?"
+        params.append(community_id)
+    cursor.execute(f"SELECT * FROM memberships {cond}", params)
+    memberships = cursor.fetchall()
+    created = 0
+    for m in memberships:
+        expires = m['expires_at']
+        if not expires:
+            continue
+        exp_dt = datetime.fromisoformat(expires)
+        if exp_dt <= cutoff:
+            cursor.execute(
+                "SELECT 1 FROM payments WHERE related_type='membership' AND related_id=? AND status='pending'",
+                (m['id'],),
+            )
+            if cursor.fetchone():
+                continue
+            cursor.execute(
+                "INSERT INTO payments (user_id, community_id, description, amount, status, related_type, related_id, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    m['user_id'],
+                    m['community_id'],
+                    "會籍續費",
+                    0.0,
+                    "pending",
+                    "membership",
+                    m['id'],
+                    expires,
+                ),
+            )
+            created += 1
+    db.commit()
+    db.close()
+    print(f"自動建立待繳帳單：{created}筆")
+
 # ==============================================
 # 🔑 設定 OpenRouter API Key (請填入你的 Key)
 # ==============================================
@@ -102,6 +149,11 @@ def create_fix_tasks(feedback, target_file):
 # 3. 啟動維護總部
 # ==============================================
 if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] in ("due", "generate_due", "auto_billing"):
+        cid = int(sys.argv[2]) if len(sys.argv) > 2 else None
+        run_due_payment_job(cid)
+        sys.exit(0)
     print("\n================================================")
     print("🚑 Himac AI 維護團隊 (Bug Fix & Refactor) 已就位")
     print("================================================\n")

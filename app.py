@@ -3,7 +3,7 @@ from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 import sqlite3
 from passlib.context import CryptContext
 import shutil
@@ -237,6 +237,17 @@ def init_db():
     )
     """)
 
+    # --- New Migration: Add any missing columns to payments ---
+    cursor.execute("PRAGMA table_info(payments)")
+    payment_columns = {row[1] for row in cursor.fetchall()}
+    # created_at may be missing in older versions
+    if "created_at" not in payment_columns:
+        cursor.execute("ALTER TABLE payments ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    if "due_date" not in payment_columns:
+        cursor.execute("ALTER TABLE payments ADD COLUMN due_date TIMESTAMP")
+    if "paid_at" not in payment_columns:
+        cursor.execute("ALTER TABLE payments ADD COLUMN paid_at TIMESTAMP")
+
     # 為既有資料庫補上 wechat_id 欄位（若不存在）
     cursor.execute("PRAGMA table_info(users)")
     existing_columns = {row[1] for row in cursor.fetchall()}
@@ -367,6 +378,17 @@ class MembershipUpdate(BaseModel):
     role: Optional[str] = None
     expires_at: Optional[str] = None
     joined_at: Optional[str] = None
+
+class PaymentCreate(BaseModel):
+    user_id: int
+    community_id: Optional[int] = 1
+    description: str
+    amount: float
+    method: Optional[str] = None
+    status: Optional[str] = 'pending'
+    related_type: Optional[str] = None
+    related_id: Optional[int] = None
+    due_date: Optional[str] = None
 
 class PaymentUpdate(BaseModel):
     status: Optional[str] = None
@@ -1012,20 +1034,21 @@ def list_payments(user_id: Optional[int] = None, community_id: Optional[int] = N
 
 
 @app.post("/api/payments")
-def create_payment(payload: dict):
+def create_payment(payload: PaymentCreate):
     db = get_db()
     cursor = db.cursor()
     cursor.execute(
-        "INSERT INTO payments (user_id, community_id, description, amount, method, status, related_type, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO payments (user_id, community_id, description, amount, method, status, related_type, related_id, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            payload.get("user_id"),
-            payload.get("community_id", 1),
-            payload.get("description", ""),
-            payload.get("amount", 0),
-            payload.get("method"),
-            payload.get("status", "pending"),
-            payload.get("related_type"),
-            payload.get("related_id"),
+            payload.user_id,
+            payload.community_id,
+            payload.description,
+            payload.amount,
+            payload.method,
+            payload.status,
+            payload.related_type,
+            payload.related_id,
+            payload.due_date,
         ),
     )
     db.commit()
@@ -1045,6 +1068,11 @@ def update_payment(payment_id: int, payload: PaymentUpdate):
     if payload.status:
         updates.append("status = ?")
         params.append(payload.status)
+        # If status is changing to 'paid', also update 'paid_at'
+        if payload.status == 'paid':
+            updates.append("paid_at = ?")
+            params.append(datetime.utcnow())
+
     if payload.method:
         updates.append("method = ?")
         params.append(payload.method)
@@ -1104,6 +1132,148 @@ def get_dashboard_stats(community_id: Optional[int] = None):
         "totalEvents": total_events,
     }
 
+
+@app.get("/api/stats/payments")
+def get_payment_stats(community_id: Optional[int] = 1):
+    db = get_db()
+    cursor = db.cursor()
+    
+    today = datetime.utcnow()
+    start_of_month = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    
+    base_query = "FROM payments WHERE community_id = ?"
+
+    # 本月應收 (Total Receivable this month): All payments created this month
+    cursor.execute(f"SELECT COALESCE(SUM(amount), 0) as total {base_query} AND created_at >= ?", (community_id, start_of_month))
+    receivable_this_month = cursor.fetchone()["total"]
+
+    # 本月已收款 (Total Paid this month): Payments paid this month
+    cursor.execute(f"SELECT COALESCE(SUM(amount), 0) as total {base_query} AND status = 'paid' AND paid_at >= ?", (community_id, start_of_month))
+    paid_this_month = cursor.fetchone()["total"]
+
+    # 待收款 (Total Pending): All payments with pending status
+    cursor.execute(f"SELECT COALESCE(SUM(amount), 0) as total {base_query} AND status = 'pending'", (community_id,))
+    total_pending = cursor.fetchone()["total"]
+    
+    # 逾期未繳 (Total Overdue): Pending payments where due_date is in the past
+    # Note: Ensure due_date is stored in a compatible format (ISO 8601 string recommended)
+    cursor.execute(f"SELECT COALESCE(SUM(amount), 0) as total {base_query} AND status = 'pending' AND due_date < ?", (community_id, today))
+    total_overdue = cursor.fetchone()["total"]
+
+    db.close()
+    
+    return {
+        "receivableThisMonth": receivable_this_month,
+        "paidThisMonth": paid_this_month,
+        "totalPending": total_pending,
+        "totalOverdue": total_overdue,
+    }
+
+
+# --- Reports API ---
+@app.get("/api/reports/payments")
+def payments_report(
+    community_id: Optional[int] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+):
+    """Return simple payment report data.
+    - monthlyTotals: [{month: '2025-01', total: 1234}, ...]
+    - categoryTotals: {membership: x, event: y, other: z}
+    - details: list of payments within range (if start/end specified)
+    """
+    db = get_db()
+    cursor = db.cursor()
+    params = []
+    cond = "WHERE 1=1"
+    if community_id is not None:
+        cond += " AND community_id = ?"
+        params.append(community_id)
+    if start:
+        cond += " AND created_at >= ?"
+        params.append(start)
+    if end:
+        cond += " AND created_at <= ?"
+        params.append(end)
+
+    # monthly totals for year surrounding start/end or last 12 months if none
+    # For sqlite we can use strftime to group by YYYY-MM
+    monthly_query = f"SELECT strftime('%Y-%m', created_at) as month, COALESCE(SUM(amount),0) as total FROM payments {cond} GROUP BY month ORDER BY month"
+    cursor.execute(monthly_query, params)
+    monthly_totals = [dict(row) for row in cursor.fetchall()]
+
+    # category totals by related_type
+    cat_query = f"SELECT COALESCE(SUM(amount),0) as total, COALESCE(related_type,'other') as type FROM payments {cond} GROUP BY type"
+    cursor.execute(cat_query, params)
+    cat_rows = cursor.fetchall()
+    category_totals: Dict[str, float] = {'membership':0,'event':0,'other':0}
+    for r in cat_rows:
+        t = r['type'] or 'other'
+        if t not in category_totals:
+            t = 'other'
+        category_totals[t] = r['total']
+
+    details = []
+    if start or end:
+        det_query = f"SELECT * FROM payments {cond} ORDER BY created_at DESC"
+        cursor.execute(det_query, params)
+        details = [dict(r) for r in cursor.fetchall()]
+
+    db.close()
+    return {
+        "monthlyTotals": monthly_totals,
+        "categoryTotals": category_totals,
+        "details": details,
+    }
+
+
+# utility: generate pending payments for memberships expiring soon
+@app.post("/api/maintenance/generate_due_payments")
+def generate_due_payments(community_id: Optional[int] = None):
+    """Create pending payment records for memberships that will expire within 30 days and have no existing pending payment."""
+    db = get_db()
+    cursor = db.cursor()
+    cutoff = datetime.utcnow() + timedelta(days=30)
+    params = []
+    cond = "WHERE expires_at IS NOT NULL AND status = 'active'"
+    if community_id is not None:
+        cond += " AND community_id = ?"
+        params.append(community_id)
+
+    cursor.execute(f"SELECT * FROM memberships {cond}", params)
+    memberships = cursor.fetchall()
+    created = 0
+    for m in memberships:
+        expires = m['expires_at']
+        if expires is None:
+            continue
+        exp_dt = datetime.fromisoformat(expires)
+        if exp_dt <= cutoff:
+            # check existing pending payments for this membership
+            cursor.execute(
+                "SELECT 1 FROM payments WHERE related_type='membership' AND related_id=? AND status='pending'",
+                (m['id'],),
+            )
+            if cursor.fetchone():
+                continue
+            # create a placeholder pending payment
+            cursor.execute(
+                "INSERT INTO payments (user_id, community_id, description, amount, status, related_type, related_id, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    m['user_id'],
+                    m['community_id'],
+                    "會籍續費",
+                    0.0,
+                    "pending",
+                    "membership",
+                    m['id'],
+                    expires,
+                ),
+            )
+            created += 1
+    db.commit()
+    db.close()
+    return {"created": created}
 
 # --- Announcements API ---
 @app.get("/api/announcements", response_model=List[Announcement])
@@ -1297,7 +1467,7 @@ def register_event(event_id: int, payload: EventRegistrationCreate):
     cursor = db.cursor()
     try:
         # Check if event has a price
-        cursor.execute("SELECT title, price, community_id FROM events WHERE id = ?", (event_id,))
+        cursor.execute("SELECT title, price, community_id, start_at FROM events WHERE id = ?", (event_id,))
         event_info = cursor.fetchone()
         if not event_info:
             db.close()
@@ -1316,18 +1486,19 @@ def register_event(event_id: int, payload: EventRegistrationCreate):
         if price and price > 0:
             cursor.execute(
                 """
-                INSERT INTO payments (user_id, community_id, description, amount, method, status, related_type, related_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO payments (user_id, community_id, description, amount, method, status, related_type, related_id, due_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload.user_id,
                     event_info["community_id"],
                     f"活動費: {event_info['title']}",
                     price,
-                    "cash", # Default to cash/transfer, can be updated later
+                    None, # Let user fill this when paying
                     "pending",
                     "event",
-                    event_id
+                    event_id,
+                    event_info["start_at"] # Set due_date to event start time
                 )
             )
             

@@ -6,7 +6,7 @@
         <h1>會籍管理系統</h1>
         <p>歡迎回來，管理員</p>
       </div>
-      <van-icon name="bell" size="24" color="#fff" badge="3" />
+      <van-icon name="bell" size="24" color="#fff" badge="3" @click="$router.push('/m/notifications')"  />
     </div>
 
     <!-- KPI 卡片 -->

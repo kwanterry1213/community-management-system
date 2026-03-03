@@ -111,6 +111,12 @@ export const paymentApi = {
     update(id, data) {
         return api.patch(`/payments/${id}`, data)
     },
+    getStats(params = {}) {
+        return api.get('/stats/payments', { params })
+    },
+    getReport(params = {}) {
+        return api.get('/reports/payments', { params })
+    },
 }
 
 // --- Community API ---
@@ -130,6 +136,13 @@ export const communityApi = {
 export const dashboardApi = {
     getStats(params = {}) {
         return api.get('/stats/dashboard', { params })
+    },
+}
+
+// --- Maintenance / Utility API ---
+export const maintenanceApi = {
+    generateDuePayments(params = {}) {
+        return api.post('/maintenance/generate_due_payments', null, { params })
     },
 }
 
