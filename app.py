@@ -9,8 +9,10 @@ from passlib.context import CryptContext
 import shutil
 import secrets
 import os
+import io
+import csv
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 
@@ -247,6 +249,8 @@ def init_db():
         cursor.execute("ALTER TABLE payments ADD COLUMN due_date TIMESTAMP")
     if "paid_at" not in payment_columns:
         cursor.execute("ALTER TABLE payments ADD COLUMN paid_at TIMESTAMP")
+    if "note" not in payment_columns:
+        cursor.execute("ALTER TABLE payments ADD COLUMN note TEXT")
 
     # 為既有資料庫補上 wechat_id 欄位（若不存在）
     cursor.execute("PRAGMA table_info(users)")
@@ -324,8 +328,15 @@ class ApiRegisterRequest(BaseModel):
     password: str
 
 class ApiLoginRequest(BaseModel):
-    identifier: str  # email or phone
+    identifier: str  # email, phone, or username
     password: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
 
 class ApiWeChatSSORequest(BaseModel):
     wechat_id: str
@@ -389,10 +400,18 @@ class PaymentCreate(BaseModel):
     related_type: Optional[str] = None
     related_id: Optional[int] = None
     due_date: Optional[str] = None
+    note: Optional[str] = None
 
 class PaymentUpdate(BaseModel):
     status: Optional[str] = None
     method: Optional[str] = None
+    description: Optional[str] = None
+    amount: Optional[float] = None
+    user_id: Optional[int] = None
+    due_date: Optional[str] = None
+    related_type: Optional[str] = None
+    related_id: Optional[int] = None
+    note: Optional[str] = None
 
 class Membership(BaseModel):
     id: int
@@ -686,14 +705,14 @@ def api_login(payload: ApiLoginRequest):
     db = get_db()
     cursor = db.cursor()
     cursor.execute(
-        "SELECT * FROM users WHERE email = ? OR phone = ?",
-        (payload.identifier, payload.identifier),
+        "SELECT * FROM users WHERE email = ? OR phone = ? OR username = ?",
+        (payload.identifier, payload.identifier, payload.identifier),
     )
     user_data = cursor.fetchone()
     db.close()
 
     if not user_data or not verify_password(payload.password, user_data["hashed_password"]):
-        raise HTTPException(status_code=401, detail="無效的電子郵件/手機號碼或密碼。")
+        raise HTTPException(status_code=401, detail="無效的帳號或密碼，請確認後重試。")
 
     user_info = {
         "id": user_data["id"],
@@ -710,6 +729,58 @@ def api_login(payload: ApiLoginRequest):
         data={"sub": str(user_data["id"])}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer", "user_info": user_info}
+
+
+_password_reset_tokens: Dict[str, dict] = {}
+
+@app.post("/api/auth/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT id, email, username FROM users WHERE email = ?", (payload.email,))
+    user = cursor.fetchone()
+    db.close()
+
+    if not user:
+        return {"message": "若該信箱已註冊，重置連結已發送至您的信箱。"}
+
+    token = secrets.token_urlsafe(32)
+    _password_reset_tokens[token] = {
+        "user_id": user["id"],
+        "email": user["email"],
+        "expires": datetime.utcnow() + timedelta(hours=1),
+    }
+
+    print(f"[Password Reset] User: {user['username']} ({user['email']}), Token: {token}")
+
+    return {
+        "message": "若該信箱已註冊，重置連結已發送至您的信箱。",
+        "reset_token": token,
+    }
+
+
+@app.post("/api/auth/reset-password")
+def reset_password(payload: ResetPasswordRequest):
+    token_data = _password_reset_tokens.get(payload.token)
+    if not token_data:
+        raise HTTPException(status_code=400, detail="重置連結無效或已過期。")
+
+    if datetime.utcnow() > token_data["expires"]:
+        _password_reset_tokens.pop(payload.token, None)
+        raise HTTPException(status_code=400, detail="重置連結已過期，請重新申請。")
+
+    if len(payload.new_password) < 6:
+        raise HTTPException(status_code=400, detail="密碼長度至少 6 個字元。")
+
+    db = get_db()
+    cursor = db.cursor()
+    hashed = get_password_hash(payload.new_password)
+    cursor.execute("UPDATE users SET hashed_password = ? WHERE id = ?", (hashed, token_data["user_id"]))
+    db.commit()
+    db.close()
+
+    _password_reset_tokens.pop(payload.token, None)
+    return {"message": "密碼已成功重置，請使用新密碼登入。"}
 
 
 @app.post("/api/auth/wechat_sso")
@@ -1038,7 +1109,7 @@ def create_payment(payload: PaymentCreate):
     db = get_db()
     cursor = db.cursor()
     cursor.execute(
-        "INSERT INTO payments (user_id, community_id, description, amount, method, status, related_type, related_id, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO payments (user_id, community_id, description, amount, method, status, related_type, related_id, due_date, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             payload.user_id,
             payload.community_id,
@@ -1049,6 +1120,7 @@ def create_payment(payload: PaymentCreate):
             payload.related_type,
             payload.related_id,
             payload.due_date,
+            payload.note,
         ),
     )
     db.commit()
@@ -1064,34 +1136,120 @@ def update_payment(payment_id: int, payload: PaymentUpdate):
     cursor = db.cursor()
     updates = []
     params = []
-    
-    if payload.status:
+
+    field_map = {
+        "description": payload.description,
+        "amount": payload.amount,
+        "user_id": payload.user_id,
+        "due_date": payload.due_date,
+        "related_type": payload.related_type,
+        "related_id": payload.related_id,
+        "note": payload.note,
+        "method": payload.method,
+    }
+    for col, val in field_map.items():
+        if val is not None:
+            updates.append(f"{col} = ?")
+            params.append(val)
+
+    if payload.status is not None:
         updates.append("status = ?")
         params.append(payload.status)
-        # If status is changing to 'paid', also update 'paid_at'
-        if payload.status == 'paid':
+        if payload.status == "paid":
             updates.append("paid_at = ?")
             params.append(datetime.utcnow())
+        elif payload.status == "pending":
+            updates.append("paid_at = ?")
+            params.append(None)
 
-    if payload.method:
-        updates.append("method = ?")
-        params.append(payload.method)
-        
     if not updates:
         raise HTTPException(status_code=400, detail="沒有要更新的欄位")
-        
+
     params.append(payment_id)
     cursor.execute(f"UPDATE payments SET {', '.join(updates)} WHERE id = ?", params)
     db.commit()
-    
+
     cursor.execute("SELECT * FROM payments WHERE id = ?", (payment_id,))
     row = cursor.fetchone()
     db.close()
-    
+
     if not row:
         raise HTTPException(status_code=404, detail="繳費記錄不存在")
-        
+
     return dict(row)
+
+
+@app.delete("/api/payments/{payment_id}")
+def delete_payment(payment_id: int):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT id FROM payments WHERE id = ?", (payment_id,))
+    if not cursor.fetchone():
+        db.close()
+        raise HTTPException(status_code=404, detail="繳費記錄不存在")
+    cursor.execute("DELETE FROM payments WHERE id = ?", (payment_id,))
+    db.commit()
+    db.close()
+    return {"message": "已刪除", "id": payment_id}
+
+
+@app.get("/api/payments/export/csv")
+def export_payments_csv(
+    community_id: Optional[int] = None,
+    status: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+):
+    db = get_db()
+    cursor = db.cursor()
+    query = """
+        SELECT p.id, u.username, p.description, p.amount, p.method, p.status,
+               p.related_type, p.due_date, p.paid_at, p.created_at, p.note
+        FROM payments p
+        LEFT JOIN users u ON p.user_id = u.id
+        WHERE 1=1
+    """
+    params = []
+    if community_id is not None:
+        query += " AND p.community_id = ?"
+        params.append(community_id)
+    if status:
+        query += " AND p.status = ?"
+        params.append(status)
+    if start:
+        query += " AND p.created_at >= ?"
+        params.append(start)
+    if end:
+        query += " AND p.created_at <= ?"
+        params.append(end)
+    query += " ORDER BY p.created_at DESC"
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    db.close()
+
+    output = io.StringIO()
+    output.write('\ufeff')
+    writer = csv.writer(output)
+    writer.writerow(["編號", "會員", "描述", "金額", "支付方式", "狀態", "分類", "繳費期限", "付款時間", "建立時間", "備註"])
+    status_map = {"pending": "待繳費", "paid": "已繳費"}
+    type_map = {"membership": "會費", "event": "活動費"}
+    for r in rows:
+        writer.writerow([
+            r["id"], r["username"] or "", r["description"],
+            r["amount"], r["method"] or "",
+            status_map.get(r["status"], r["status"]),
+            type_map.get(r["related_type"], r["related_type"] or "其他"),
+            r["due_date"] or "", r["paid_at"] or "", r["created_at"] or "",
+            r["note"] or "",
+        ])
+
+    output.seek(0)
+    filename = f"payments_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # --- Dashboard Stats API ---
@@ -1215,7 +1373,8 @@ def payments_report(
 
     details = []
     if start or end:
-        det_query = f"SELECT * FROM payments {cond} ORDER BY created_at DESC"
+        det_cond = cond.replace("WHERE 1=1", "WHERE 1=1").replace("community_id", "p.community_id").replace("created_at", "p.created_at")
+        det_query = f"SELECT p.*, u.username FROM payments p LEFT JOIN users u ON p.user_id = u.id {det_cond} ORDER BY p.created_at DESC"
         cursor.execute(det_query, params)
         details = [dict(r) for r in cursor.fetchall()]
 

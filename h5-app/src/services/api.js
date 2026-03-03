@@ -37,6 +37,12 @@ export const authApi = {
     register(data) {
         return api.post('/auth/register', data)
     },
+    forgotPassword(email) {
+        return api.post('/auth/forgot-password', { email })
+    },
+    resetPassword(token, new_password) {
+        return api.post('/auth/reset-password', { token, new_password })
+    },
 }
 
 // --- User API ---
@@ -111,11 +117,19 @@ export const paymentApi = {
     update(id, data) {
         return api.patch(`/payments/${id}`, data)
     },
+    delete(id) {
+        return api.delete(`/payments/${id}`)
+    },
     getStats(params = {}) {
         return api.get('/stats/payments', { params })
     },
     getReport(params = {}) {
         return api.get('/reports/payments', { params })
+    },
+    exportCSV(params = {}) {
+        const query = new URLSearchParams(params).toString()
+        const url = `/api/payments/export/csv${query ? '?' + query : ''}`
+        window.open(url, '_blank')
     },
 }
 
