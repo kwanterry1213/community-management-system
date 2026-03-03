@@ -231,9 +231,9 @@ const typeColumns = [
   { text: '其他', value: 'other' },
 ]
 const methodColumns = [
+  { text: '中銀轉賬', value: '中銀轉賬' },
+  { text: 'Mpay', value: 'Mpay' },
   { text: '現金', value: '現金' },
-  { text: '轉帳', value: '轉帳' },
-  { text: '微信', value: '微信' },
   { text: '其他', value: '其他' },
 ]
 const statusColumns = [
@@ -242,7 +242,12 @@ const statusColumns = [
 ]
 const typeMap = { membership: '會費', event: '活動費', other: '其他' }
 const statusMap = { pending: '待繳費', paid: '已繳費' }
-const methodMap = { '現金': '現金', '轉帳': '轉帳', '微信': '微信', '其他': '其他' }
+const methodMap = {
+  '中銀轉賬': '中銀轉賬',
+  Mpay: 'Mpay',
+  '現金': '現金',
+  '其他': '其他',
+}
 
 const memberColumns = computed(() =>
   members.value.map((m) => ({ text: `${m.username} (ID:${m.id})`, value: m.id }))
@@ -455,8 +460,18 @@ const submitForm = async () => {
 }
 
 // --- Payment actions ---
+import bocIcon from '@/assets/payments/boc.png'
+import mpayIcon from '@/assets/payments/mpay.png'
+import cashIcon from '@/assets/payments/cash.png'
+import otherIcon from '@/assets/payments/other.png'
+
 const showPayMethodSheet = ref(false)
-const payMethodActions = [{ name: '現金' }, { name: '轉帳' }, { name: '微信' }, { name: '其他' }]
+const payMethodActions = [
+  { name: '中銀轉賬', icon: bocIcon },
+  { name: 'Mpay', icon: mpayIcon },
+  { name: '現金', icon: cashIcon },
+  { name: '其他', icon: otherIcon },
+]
 const confirmingItem = ref(null)
 
 const confirmPayment = (item) => {

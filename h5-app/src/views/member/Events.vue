@@ -125,8 +125,13 @@
         </van-cell>
         
         <h4 style="margin: 20px 0 10px;">選擇付款方式</h4>
-        <div v-for="m in payMethods" :key="m.value" :class="['pay-method', { selected: selMethod === m.value }]" @click="selMethod = m.value">
-          <van-icon :name="m.icon" size="24" :color="m.color" />
+        <div
+          v-for="m in payMethods"
+          :key="m.value"
+          :class="['pay-method', { selected: selMethod === m.value }]" 
+          @click="selMethod = m.value"
+        >
+          <img :src="m.icon" alt="" class="pay-icon" />
           <span style="flex: 1; margin-left: 12px;">{{ m.name }}</span>
           <van-icon v-if="selMethod === m.value" name="success" color="#38a169" />
         </div>
@@ -150,7 +155,10 @@ import { eventApi, paymentApi } from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter, useRoute } from 'vue-router'
 import { showToast, showDialog } from 'vant'
-
+import bocIcon from '@/assets/payments/boc.png'
+import mpayIcon from '@/assets/payments/mpay.png'
+import cashIcon from '@/assets/payments/cash.png'
+import otherIcon from '@/assets/payments/other.png'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -165,8 +173,10 @@ const selectedEvent = ref(null)
 const selMethod = ref('')
 
 const payMethods = [
-  { value: 'bank', name: '銀行轉賬', icon: 'bank-card-o', color: '#d69e2e' },
-  { value: 'cash', name: '現金', icon: 'cash-back-record', color: '#718096' },
+  { value: '中銀轉賬', name: '中銀轉賬', icon: bocIcon },
+  { value: 'Mpay', name: 'Mpay', icon: mpayIcon },
+  { value: '現金', name: '現金', icon: cashIcon },
+  { value: '其他', name: '其他', icon: otherIcon },
 ]
 
 const events = ref([])
@@ -525,6 +535,23 @@ onMounted(fetchEvents)
 .fab-button:active {
   transform: scale(0.95);
 }
-.pay-method { display: flex; align-items: center; padding: 14px; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 10px; cursor: pointer; }
-.pay-method.selected { border-color: #3182ce; background: #ebf8ff; }
+.pay-method {
+  display: flex;
+  align-items: center;
+  padding: 14px;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+.pay-method.selected {
+  border-color: #3182ce;
+  background: #ebf8ff;
+}
+.pay-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: contain;
+}
 </style>
