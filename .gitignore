@@ -40,6 +40,10 @@ uploads/
 Thumbs.db
 *.png
 
+# Allow payment icons (override *.png)
+!h5-app/src/assets/payments/
+!h5-app/src/assets/payments/*.png
+
 # Logs
 *.log
 
