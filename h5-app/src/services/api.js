@@ -160,6 +160,13 @@ export const maintenanceApi = {
     },
 }
 
+// --- Search API ---
+export const searchApi = {
+    smartSearch(query) {
+        return api.post('/smart-search', { query }, { timeout: 35000 })
+    },
+}
+
 // --- Common API ---
 export const commonApi = {
     upload(file) {

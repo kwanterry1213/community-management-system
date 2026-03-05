@@ -8,3 +8,4 @@ streamlit
 aiofiles
 jinja2
 requests
+python-dotenv

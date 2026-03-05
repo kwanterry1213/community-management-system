@@ -15,6 +15,15 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
+import json
+import requests as http_requests
+import logging
+from dotenv import load_dotenv
+
+# 載入 .env 文件中的環境變數
+load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # --- Database Setup ---
 DATABASE_NAME = os.path.join(os.path.dirname(os.path.abspath(__file__)), "community_app.db")
@@ -293,6 +302,13 @@ def init_db():
     if "early_bird_deadline" not in event_columns:
         cursor.execute("ALTER TABLE events ADD COLUMN early_bird_deadline TIMESTAMP")
 
+    # --- Migration: Add skills & occupation to users ---
+    cursor.execute("PRAGMA table_info(users)")
+    user_columns = {row[1] for row in cursor.fetchall()}
+    if "skills" not in user_columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN skills TEXT")
+    if "occupation" not in user_columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN occupation TEXT")
 
     db.commit()
     db.close()
@@ -353,6 +369,8 @@ class User(BaseModel):
     username: str
     profile_picture: Optional[str] = None
     bio: Optional[str] = None
+    skills: Optional[str] = None
+    occupation: Optional[str] = None
 
     class Config:
         orm_mode = True
@@ -584,9 +602,14 @@ class Message(BaseModel):
 app = FastAPI()
 
 # --- CORS ---
+# 允許的來源：從環境變數讀取，預設允許所有（開發環境）
+# 生產環境建議設置：ALLOWED_ORIGINS=https://your-domain.onrender.com,https://www.your-domain.com
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "*")
+allowed_origins = allowed_origins_env.split(",") if allowed_origins_env != "*" else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -721,6 +744,8 @@ def api_login(payload: ApiLoginRequest):
         "username": user_data["username"],
         "profile_picture_url": user_data["profile_picture"],
         "bio": user_data["bio"],
+        "skills": user_data["skills"],
+        "occupation": user_data["occupation"],
         "is_profile_public": True,
         "show_email_publicly": False,
     }
@@ -852,6 +877,8 @@ def api_wechat_sso(payload: ApiWeChatSSORequest):
         "username": user_data["username"],
         "profile_picture_url": user_data["profile_picture"],
         "bio": user_data["bio"],
+        "skills": user_data["skills"],
+        "occupation": user_data["occupation"],
         "is_profile_public": True,
         "show_email_publicly": False,
     }
@@ -1053,6 +1080,8 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None
     bio: Optional[str] = None
     profile_picture: Optional[str] = None
+    skills: Optional[str] = None
+    occupation: Optional[str] = None
 
 
 @app.patch("/api/users/{user_id}", response_model=User)
@@ -1061,7 +1090,7 @@ def api_update_user(user_id: int, payload: UserUpdate, current_user: User = Depe
     cursor = db.cursor()
     updates = []
     params = []
-    for field in ["username", "phone", "email", "bio", "profile_picture"]:
+    for field in ["username", "phone", "email", "bio", "profile_picture", "skills", "occupation"]:
         value = getattr(payload, field, None)
         if value is not None:
             updates.append(f"{field} = ?")
@@ -1077,6 +1106,189 @@ def api_update_user(user_id: int, payload: UserUpdate, current_user: User = Depe
     if not row:
         raise HTTPException(status_code=404, detail="使用者不存在")
     return User(**dict(row))
+
+
+# --- Smart Search API ---
+# 🔑 配置 OpenRouter API Key
+# 
+# 本地開發：從 .env 文件中讀取（更安全，不會提交到 Git）
+#   請在項目根目錄創建 .env 文件，並添加：OPENROUTER_API_KEY=your-api-key-here
+#
+# Render 部署：通過 Render Dashboard 設置環境變數
+#   1. 登入 Render Dashboard
+#   2. 選擇你的服務 (community-management-system)
+#   3. 進入 "Environment" 頁籤
+#   4. 添加環境變數：OPENROUTER_API_KEY = your-api-key-here
+#   5. 保存並重新部署
+#
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+if not OPENROUTER_API_KEY:
+    error_msg = (
+        "⚠️  OPENROUTER_API_KEY 未設置！\n"
+        "本地開發：請在 .env 文件中添加 OPENROUTER_API_KEY=your-api-key-here\n"
+        "Render 部署：請在 Render Dashboard > Environment 頁籤中添加環境變數 OPENROUTER_API_KEY"
+    )
+    logger.error(error_msg)
+    # 在 Render 上，如果沒有設置 API Key，記錄錯誤但不阻止啟動（讓服務可以運行其他功能）
+    # 如果需要強制要求 API Key，可以取消下面的註釋：
+    # raise ValueError(error_msg)
+
+
+class SmartSearchRequest(BaseModel):
+    query: str
+
+
+class SearchResult(BaseModel):
+    user_id: int
+    username: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    bio: Optional[str] = None
+    skills: Optional[str] = None
+    occupation: Optional[str] = None
+    profile_picture: Optional[str] = None
+    match_reason: Optional[str] = None
+
+
+class SmartSearchResponse(BaseModel):
+    results: List[SearchResult]
+    is_ai: bool
+
+
+def _looks_like_need(query: str) -> bool:
+    """Heuristic: if the query contains service/action keywords, treat as a need description."""
+    need_keywords = [
+        "找人", "需要", "幫忙", "服務", "維修", "修理", "安裝", "清潔", "搬運",
+        "裝修", "設計", "教學", "補習", "代購", "殺蟲", "煮飯", "照顧", "接送",
+        "翻譯", "攝影", "拍照", "剪髮", "美容", "按摩", "水電", "油漆",
+        "想找", "有沒有人", "誰能", "誰會", "哪位", "推薦",
+    ]
+    return any(kw in query for kw in need_keywords)
+
+
+def _direct_search(query: str, cursor) -> list:
+    """LIKE search on username / phone / email."""
+    like = f"%{query}%"
+    cursor.execute(
+        "SELECT id, username, phone, email, bio, skills, occupation, profile_picture "
+        "FROM users WHERE username LIKE ? OR phone LIKE ? OR email LIKE ?",
+        (like, like, like),
+    )
+    rows = cursor.fetchall()
+    return [
+        SearchResult(
+            user_id=r["id"], username=r["username"], phone=r["phone"],
+            email=r["email"], bio=r["bio"], skills=r["skills"],
+            occupation=r["occupation"], profile_picture=r["profile_picture"],
+        )
+        for r in rows
+    ]
+
+
+def _ai_search(query: str, cursor) -> list:
+    """Use DeepSeek via OpenRouter to match user needs against member profiles."""
+    cursor.execute(
+        "SELECT id, username, bio, skills, occupation FROM users"
+    )
+    members = cursor.fetchall()
+    if not members:
+        return []
+
+    member_list_text = "\n".join(
+        f"- ID:{m['id']} | 姓名:{m['username']} | 職業:{m['occupation'] or '未填'} "
+        f"| 技能:{m['skills'] or '未填'} | 簡介:{m['bio'] or '未填'}"
+        for m in members
+    )
+
+    prompt = (
+        "你是一個社區會員推薦助手。使用者有以下需求：\n"
+        f"「{query}」\n\n"
+        "以下是社區會員名單：\n"
+        f"{member_list_text}\n\n"
+        "請從中挑選最多 5 位最可能滿足需求的會員，以 JSON 陣列回傳：\n"
+        '[{"id": 會員ID, "reason": "匹配原因（30字以內）"}, ...]\n'
+        "如果沒有合適人選，回傳空陣列 []。只回傳 JSON，不要其他文字。"
+    )
+
+    try:
+        resp = http_requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "deepseek/deepseek-chat",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.3,
+                "max_tokens": 512,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"].strip()
+        # Strip markdown fences if present
+        if content.startswith("```"):
+            content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            content = content.strip()
+        recommendations = json.loads(content)
+    except Exception as e:
+        logger.warning("AI search failed: %s", e)
+        return []
+
+    member_map = {m["id"]: m for m in members}
+    results = []
+    for rec in recommendations[:5]:
+        mid = rec.get("id")
+        if mid and mid in member_map:
+            m = member_map[mid]
+            cursor.execute(
+                "SELECT phone, email, profile_picture FROM users WHERE id = ?",
+                (mid,),
+            )
+            full = cursor.fetchone()
+            results.append(
+                SearchResult(
+                    user_id=mid,
+                    username=m["username"],
+                    phone=full["phone"] if full else None,
+                    email=full["email"] if full else None,
+                    bio=m["bio"],
+                    skills=m["skills"],
+                    occupation=m["occupation"],
+                    profile_picture=full["profile_picture"] if full else None,
+                    match_reason=rec.get("reason", ""),
+                )
+            )
+    return results
+
+
+@app.post("/api/smart-search", response_model=SmartSearchResponse)
+def api_smart_search(payload: SmartSearchRequest, current_user: User = Depends(get_current_user)):
+    query = payload.query.strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="搜尋內容不能為空")
+
+    db = get_db()
+    cursor = db.cursor()
+
+    direct_results = _direct_search(query, cursor)
+    if direct_results and not _looks_like_need(query):
+        db.close()
+        return SmartSearchResponse(results=direct_results, is_ai=False)
+
+    ai_results = _ai_search(query, cursor)
+    db.close()
+
+    if ai_results:
+        return SmartSearchResponse(results=ai_results, is_ai=True)
+
+    if direct_results:
+        return SmartSearchResponse(results=direct_results, is_ai=False)
+
+    return SmartSearchResponse(results=[], is_ai=False)
 
 
 # --- Payments API ---

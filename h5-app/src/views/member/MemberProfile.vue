@@ -14,6 +14,8 @@
       <van-cell title="姓名" :value="authStore.currentUser?.username || '—'" />
       <van-cell title="電話" :value="authStore.currentUser?.phone_number || '—'" />
       <van-cell title="電子郵件" :value="authStore.currentUser?.email || '—'" />
+      <van-cell title="職業" :value="authStore.currentUser?.occupation || '—'" />
+      <van-cell title="技能" :value="authStore.currentUser?.skills || '—'" />
       <van-cell title="簡介" :value="authStore.currentUser?.bio || '—'" />
       <van-cell title="編輯資料" is-link @click="showEditPopup = true" />
     </van-cell-group>
@@ -44,6 +46,8 @@
             <van-field v-model="editForm.username" label="姓名" placeholder="請輸入姓名" />
             <van-field v-model="editForm.phone" label="電話" placeholder="請輸入電話" />
             <van-field v-model="editForm.email" label="電子郵件" placeholder="請輸入信箱" />
+            <van-field v-model="editForm.occupation" label="職業" placeholder="如：水電工、設計師" />
+            <van-field v-model="editForm.skills" label="技能" placeholder="逗號分隔，如：水電維修,殺蟲,清潔" />
             <van-field v-model="editForm.bio" label="簡介" type="textarea" placeholder="請輸入簡介" rows="2" autosize />
           </van-cell-group>
           <div style="padding: 16px;"><van-button type="primary" block round native-type="submit">儲存</van-button></div>
@@ -112,7 +116,7 @@ const showPasswordPopup = ref(false)
 const showNotifPopup = ref(false)
 const showFeedbackPopup = ref(false)
 
-const editForm = ref({ username: '', phone: '', email: '', bio: '' })
+const editForm = ref({ username: '', phone: '', email: '', bio: '', occupation: '', skills: '' })
 const passwordForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' })
 const notifSettings = ref({ events: true, announcements: true, payments: true })
 const feedbackText = ref('')
@@ -125,6 +129,8 @@ onMounted(() => {
       phone: u.phone_number || '',
       email: u.email || '',
       bio: u.bio || '',
+      occupation: u.occupation || '',
+      skills: u.skills || '',
     }
   }
 })

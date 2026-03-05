@@ -26,6 +26,8 @@ export const useMemberStore = defineStore('member', () => {
                     email: user.email,
                     phone: user.phone,
                     bio: user.bio,
+                    skills: user.skills,
+                    occupation: user.occupation,
                     joinDate: ms?.joined_at?.split('T')[0] || user.created_at?.split('T')[0] || '—',
                     level: ms?.role === 'admin' ? 'admin' : ms?.role === 'staff' ? 'committee' : ms?.role === 'member' ? 'citizen' : 'friend',
                     status: ms?.status || 'pending',

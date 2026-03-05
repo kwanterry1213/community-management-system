@@ -1,4 +1,8 @@
 import os
+from dotenv import load_dotenv
+
+# 載入 .env 文件中的環境變數（如果存在）
+load_dotenv()
 from crewai import Agent, Task, Crew, Process, LLM
 # ✅ 這是新版寫法，必須安裝 crewai-tools
 from crewai_tools import FileReadTool
@@ -51,10 +55,17 @@ def run_due_payment_job(community_id: int = None):
     print(f"自動建立待繳帳單：{created}筆")
 
 # ==============================================
-# 🔑 設定 OpenRouter API Key (請填入你的 Key)
+# 🔑 設定 OpenRouter API Key
 # ==============================================
-OPENROUTER_API_KEY = "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" # <--- 請在此處貼上你的 API Key
-os.environ["OPENROUTER_API_KEY"] = OPENROUTER_API_KEY
+# 從環境變數讀取 API Key（更安全）
+# 本地開發：在 .env 文件中設置 OPENROUTER_API_KEY
+# Render 部署：在 Render Dashboard > Environment 中設置
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+if not OPENROUTER_API_KEY:
+    print("⚠️  警告：OPENROUTER_API_KEY 未設置，某些功能可能無法使用")
+    print("   請在 .env 文件或環境變數中設置 OPENROUTER_API_KEY")
+else:
+    os.environ["OPENROUTER_API_KEY"] = OPENROUTER_API_KEY
 
 # 定義大腦 (使用 DeepSeek)
 himac_llm = LLM(

@@ -62,6 +62,12 @@ const routes = [
                 name: 'MemberProfile',
                 component: () => import('@/views/member/MemberProfile.vue'),
                 meta: { title: '我的' }
+            },
+            {
+                path: 'search',
+                name: 'MemberSearch',
+                component: () => import('@/views/SmartSearch.vue'),
+                meta: { title: '智能搜索' }
             }
         ]
     },
@@ -114,6 +120,12 @@ const routes = [
                 name: 'AdminProfile',
                 component: () => import('@/views/Profile.vue'),
                 meta: { title: '個人中心' }
+            },
+            {
+                path: 'search',
+                name: 'AdminSearch',
+                component: () => import('@/views/SmartSearch.vue'),
+                meta: { title: '智能搜索' }
             }
         ]
     },

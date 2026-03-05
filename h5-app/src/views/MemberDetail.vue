@@ -26,6 +26,8 @@
           <van-cell title="會員編號" :value="member.membershipNo || String(member.id)" />
           <van-cell title="聯絡電話" :value="member.phone" is-link @click="callPhone" />
           <van-cell title="電子郵件" :value="member.email" />
+          <van-cell title="職業" :value="member.occupation || '—'" />
+          <van-cell title="技能" :value="member.skills || '—'" />
           <van-cell title="簡介" :value="member.bio || '—'" />
         </van-cell-group>
       </div>
